@@ -13,7 +13,7 @@ local update_time = ngx.update_time
 local shared = ngx.shared
 local phase = ngx.get_phase
 local loadstring = loadstring
-local serpent = require('serpent')
+local serpent = require('resty.serpent')
 local serialise = serpent.dump
 
 
@@ -26,7 +26,6 @@ local mt = { __index = _M }
 local default_pool = {
     up = true,
     method = 'round_robin',
-    keepalive = 0,
     timeout = 2000,
     keepalive = 0,
     priority = 0,
@@ -130,19 +129,49 @@ function _M.setMethod(self, poolid, method)
     return savePools(self, pools)
 end
 
-function _M.createPool(self, poolid)
+function _M.createPool(self, opts)
+    local poolid = opts.id
+    if not poolid then
+        return nil, 'No ID set'
+    end
+
     local pools = self:getPools()
     if pools[poolid] then
         return nil, 'Pool exists'
     end
-    pools[poolid] = default_pool
-    ngx.log(ngx.DEBUG, 'Added pool '..poolid)
 
-    return savePools(self, pools)
+    local numerics = {'priority', 'timeout', 'keepalive'}
+    for _,key in ipairs(numerics) do
+        if opts[key] and type(opts[key]) ~= "number" then
+            return nil, key.. " must be a number"
+        end
+    end
+    if opts[method] and not available_methods[opts[method]] then
+        return nil, 'Method not available'
+    end
+
+    pools[poolid] = {}
+    for k,v in pairs(default_pool) do
+        local val = opts[k] or v
+        -- Do not allow broken values through
+        if k == 'up' or k == 'hosts' then
+            val = v
+        end
+        pools[poolid][k] = val
+    end
+
+    local ok, err = savePools(self, pools)
+    if not ok then
+        return ok, err
+    end
+    ngx.log(ngx.DEBUG, 'Created pool '..poolid)
+    return sortPools(self, pools)
 end
 
 function _M.setPriority(self, poolid, priority)
-    assert(type(priority) == 'number', 'Priority must be a number')
+    if type(priority) ~= 'number' then
+        return nil, 'Priority must be a number'
+    end
 
     local pools = self:getPools()
     if pools[poolid] == nil then
@@ -228,8 +257,49 @@ function _M.postProcess(self)
 end
 
 -- Fast path
-available_methods.round_robin = function(self, live_hosts, total_weight, sock, poolid, failed_hosts)
+
+local function getLiveHosts(all_hosts)
+    if all_hosts == nil then
+        return {}, 0, 0
+    end
+
+    local live_hosts = {}
+    local total_weight = 0
+
+    -- Get live hosts in the pool
+    local num_hosts = 0
+    for hostid, host in pairs(all_hosts) do
+        -- Disregard dead hosts
+        if host.up then
+            num_hosts = num_hosts+1
+            host.id = hostid
+            live_hosts[num_hosts] = host
+            total_weight = total_weight + host.weight
+        end
+    end
+
+    return live_hosts, num_hosts, total_weight
+end
+
+local function connectFailed(failed_hosts, id, host, port, poolid)
+    -- Flag host as failed
+    failed_hosts[id] = true
+    ngx_log(ngx_err, str_format('Failed connecting to Host "%s (%s:%d)" from pool "%s"', id, host, port, poolid))
+end
+
+local function setSocketParams(sock, pool)
+    -- Set socket params
+    sock:settimeout(pool.timeout)
+end
+
+available_methods.round_robin = function(self, live_hosts, total_weight, sock, poolid)
     local err
+
+    local failed = self.ctx().failed
+    if not failed[poolid]  then
+        failed[poolid] = {}
+    end
+    local failed_hosts = failed[poolid]
 
     update_time()
     randomseed(now())
@@ -244,7 +314,7 @@ available_methods.round_robin = function(self, live_hosts, total_weight, sock, p
 
         -- Might need the index afterwards
         local idx = 0
-        while idx <= num_hosts do
+        while idx < num_hosts do
             idx = idx + 1
             local cur_host = live_hosts[idx]
             if cur_host ~= false then
@@ -270,11 +340,10 @@ available_methods.round_robin = function(self, live_hosts, total_weight, sock, p
             return connected, sock, err, host
         else
             -- Set the tried host to false and drop the total_weight by that weight
-            -- Flag the host as down
-            failed_hosts[host_id] = true
             live_hosts[idx] = false
             total_weight = total_weight - host.weight
-            ngx_log(ngx_err, str_format('Failed connecting to Host "%s (%s:%d)" from pool "%s"', host_id, host_host, host_port, poolid))
+
+            connectFailed(failed_hosts, host.id, host.host, host.port, poolid)
         end
     until connected
     return nil, sock, err, {}
@@ -297,9 +366,9 @@ function _M.connect(self)
         return nil, 'Pools broken'
     end
 
+    -- Add pools to ctx for post-processing
     local ctx = self.ctx()
     ctx.pools = pools
-    local failed = ctx.failed
 
     -- upvalue these to return errors later
     local connected, err = nil, nil
@@ -310,47 +379,27 @@ function _M.connect(self)
         local poolid = priority_index[i]
         local pool = pools[poolid]
 
-        -- Track failed hosts in ctx
-        if not failed[poolid]  then
-            failed[poolid] = {}
-        end
-        local failed_hosts = failed[poolid]
-
         if pool.up then
-            local all_hosts = pool.hosts or {}
-            local weights = {}
-            local total_weight = 0
-            local live_hosts = {}
+            local live_hosts, num_hosts, total_weight = getLiveHosts(pool.hosts)
 
-            -- Get live hosts in the pool
-            local num_hosts = 0
-            for hostid, host in pairs(all_hosts) do
-                -- Disregard dead hosts
-                if host.up then
-                    num_hosts = num_hosts+1
-                    host.id = hostid
-                    live_hosts[num_hosts] = host
-                    total_weight = total_weight + host.weight
-                end
-            end
+            -- Set socket parameters from pool
+            setSocketParams(sock, pool)
 
             -- Attempt a connection
             if num_hosts == 1 then
                 -- Don't bother trying to balance between 1 host
                 local host = live_hosts[1]
-
                 connected, err = sock:connect(host.host, host.port)
                 if not connected then
-                    -- Flag host as failed
-                    failed_hosts[host.id] = true
-                    ngx_log(ngx_err, str_format('Failed connecting to Host "%s (%s:%d)" from pool "%s"', host.id, host.host, host.port, poolid))
+                    local failed = self.ctx().failed
+                    if not failed[poolid]  then
+                        failed[poolid] = {}
+                    end
+                    connectFailed(failed[poolid], host.id, host.host, host.port, poolid)
                 end
             elseif num_hosts > 0 then
-                -- Set socket params
-                sock:settimeout(pool.timeout)
-
                 -- Load balance between available hosts using specified method
-                connected, sock, err, host = available_methods[pool.method](self, live_hosts, total_weight, sock, poolid, failed_hosts)
+                connected, sock, err, host = available_methods[pool.method](self, live_hosts, total_weight, sock, poolid)
             end
 
             if connected then
@@ -358,7 +407,7 @@ function _M.connect(self)
                 return sock, err
             end
             -- Failed to connect, try next pool
-            ngx_log(ngx_debug, str_format('Pool %s out of hosts', poolid))
+            --ngx_log(ngx_debug, str_format('Pool %s out of hosts', poolid))
         end
         -- Pool was dead, next
     end
