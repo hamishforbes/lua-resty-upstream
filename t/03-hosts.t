@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * 5;
+plan tests => repeat_each() * 7;
 
 my $pwd = cwd();
 
@@ -37,7 +37,7 @@ __DATA__
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
-    location = /a {
+    location = /1 {
         content_by_lua '
             local ok, err upstream:addHost("foobar", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, keepalive = 256, weight = 10 })
             if not ok then
@@ -49,13 +49,13 @@ __DATA__
         ';
     }
 --- request
-GET /a
+GET /1
 --- errorcode: 200
 
 === TEST 2: Mark single host down after 3 fails
 --- http_config eval: $::HttpConfig
 --- config
-    location = /a {
+    location = /2 {
         content_by_lua '
             upstream:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, keepalive = 256, weight = 10 })
 
@@ -68,24 +68,24 @@ GET /a
             pools = upstream:getPools()
 
             if pools.primary.hosts.a.up then
-                ngx.say("FAIL")
                 ngx.status = 500
+                ngx.say("FAIL")
             else
-                ngx.say("OK")
                 ngx.status = 200
+                ngx.say("OK")
             end
             ngx.exit(ngx.status)
         ';
     }
 --- request
-GET /a
+GET /2
 --- response_body
 OK
 
 === TEST 3: Mark round_robin host down after 3 fails
 --- http_config eval: $::HttpConfig
 --- config
-    location = /a {
+    location = /3 {
         content_by_lua '
             upstream:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, keepalive = 256, weight = 9999 })
             upstream:addHost("primary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, keepalive = 256, weight = 1 })
@@ -109,6 +109,38 @@ OK
         ';
     }
 --- request
-GET /a
+GET /3
 --- response_body
 OK
+
+=== TEST 4: Mixed specific and implied host IDs
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = /4 {
+        content_by_lua '
+
+            upstream:addHost("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, keepalive = 256, weight = 1 })
+            upstream:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, keepalive = 256, weight = 1 })
+            upstream:addHost("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, keepalive = 256, weight = 1 })
+            upstream:addHost("primary", { id="foo", host = ngx.var.server_addr, port = ngx.var.server_port, keepalive = 256, weight = 1 })
+
+            local pools, err = upstream:getPools()
+            local ids = {}
+            for k,v in pairs(pools.primary.hosts) do
+                table.insert(ids, tostring(k))
+            end
+            table.sort(ids)
+            for k,v in ipairs(ids) do
+                ngx.say(v)
+            end
+        ';
+    }
+--- request
+GET /4
+--- response_body
+1
+2
+a
+foo
+

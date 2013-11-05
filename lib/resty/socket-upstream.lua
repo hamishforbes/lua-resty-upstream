@@ -6,6 +6,7 @@ local ngx_info = ngx.INFO
 local str_format = string.format
 local tbl_insert = table.insert
 local tbl_sort = table.sort
+local tbl_len = table.getn
 local randomseed = math.randomseed
 local random = math.random
 local now = ngx.now
@@ -195,9 +196,9 @@ function _M.addHost(self, poolid, host)
     local pool = pools[poolid]
 
     -- Validate host definition and set defaults
-    local hostid = #pool.hosts
-    if host['id'] and pool.hosts[host['id']] == nil then
-        hostid = host['id']
+    local hostid = host['id']
+    if not hostid or pool.hosts[hostid] ~= nil then
+        hostid = tbl_len(pool.hosts)+1
     end
 
     local new_host = {}
@@ -253,7 +254,7 @@ function _M.postProcess(self)
 
     end
 
-    savePools(self, pools)
+    return savePools(self, pools)
 end
 
 -- Fast path
