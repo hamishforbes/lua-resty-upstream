@@ -14,7 +14,7 @@ our $HttpConfig = qq{
     lua_shared_dict test_upstream 1m;
 
     init_by_lua '
-        socket_upstream = require("resty.socket-upstream")
+        socket_upstream = require("resty.upstream.socket")
 
         local dict = ngx.shared["test_upstream"]
         dict:delete("pools")
@@ -24,8 +24,8 @@ our $HttpConfig = qq{
         upstream:createPool({id = "primary", timeout = 100})
         upstream:setMethod("primary", "round_robin")
 
-        upstream:addHost("primary", { id="a", host = "127.0.0.1", port = "80", keepalive = 256, weight = 10 })
-        upstream:addHost("primary", { id="b", host = "127.0.0.1", port = "81", keepalive = 256, weight = 10 })
+        upstream:addHost("primary", { id="a", host = "127.0.0.1", port = "80", weight = 10 })
+        upstream:addHost("primary", { id="b", host = "127.0.0.1", port = "81", weight = 10 })
 
         upstream:createPool({id = "tertiary", timeout = 100, priority = 30})
 

@@ -14,7 +14,7 @@ our $HttpConfig = qq{
     lua_shared_dict test_upstream 1m;
 
     init_by_lua '
-        socket_upstream = require("resty.socket-upstream")
+        socket_upstream = require("resty.upstream.socket")
 
         local dict = ngx.shared["test_upstream"]
         dict:delete("pools")
@@ -61,11 +61,11 @@ GET /a
     location = /a {
         content_by_lua '
         -- Bad hosts
-            upstream:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, keepalive = 256, weight = 10 })
-            upstream:addHost("primary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, keepalive = 256, weight = 10 })
+            upstream:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
+            upstream:addHost("primary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
         -- Good hosts
-            upstream:addHost("secondary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, keepalive = 256, weight = 10 })
-            upstream:addHost("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, keepalive = 256, weight = 10 })
+            upstream:addHost("secondary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
+            upstream:addHost("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
 
             local sock, err = upstream:connect()
             if not sock then
@@ -123,7 +123,14 @@ GET /a
 --- config
     location = /a {
         content_by_lua '
-            local ok, err = upstream:createPool({id = "testpool", priority = "abcd", timeout = "foo", method = "bar", keepalive = "xyz"})
+            local ok, err = upstream:createPool({
+                    id = "testpool",
+                    priority = "abcd",
+                    timeout = "foo",
+                    method = "bar",
+                    max_fails = "three",
+                    fail_timeout = "sixty"
+                })
 
             if not ok then
                 ngx.status = 200
