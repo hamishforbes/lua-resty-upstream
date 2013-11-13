@@ -54,7 +54,7 @@ init_by_lua '
         api:setPriority("primary", 0)
         api:setMethod("primary", "round_robin")
         api:addHost("primary", { id="a", host = "127.0.0.1", port = "80", weight = 10 })
-        upstream:addHost("primary", { id="b", host = "127.0.0.1", port = "81",  weight = 10 })
+        api:addHost("primary", { id="b", host = "127.0.0.1", port = "81",  weight = 10 })
 
         api:createPool({id = "dr"})
         api:setPriority("dr", 10)
@@ -83,7 +83,7 @@ server {
 # upstream.socket
 
 ### new
-`syntax: upstream, configured = socket_upstream:new(dictionary)`
+`syntax: upstream, configured = upstream_socket:new(dictionary)`
 
 Returns a new upstream object using the provided dictionary name.
 When called in init_by_lua returns an additional variable if the dictionary already contains configuration.
@@ -156,7 +156,6 @@ e.g.
         priority = 10,
         hosts = {
             dr01 = {
-                id = "dr01",
                 host = "10.10.10.1",
                 weight = 10,
                 port = "80",
