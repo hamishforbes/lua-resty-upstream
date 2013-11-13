@@ -6,7 +6,6 @@ local ngx_info = ngx.INFO
 local str_format = string.format
 local tbl_insert = table.insert
 local tbl_sort = table.sort
-local tbl_len = table.getn
 local randomseed = math.randomseed
 local random = math.random
 local now = ngx.now
@@ -24,57 +23,12 @@ local _M = {
 
 local mt = { __index = _M }
 
-local default_pool = {
-    up = true,
-    method = 'round_robin',
-    timeout = 2000, -- socket timeout
-    priority = 0,
-    -- Hosts in this pool must fail `max_fails` times in `failed_timeout` seconds to be marked down for `failed_timeout` seconds
-    failed_timeout = 60,
-    max_fails = 3,
-    hosts = {}
-}
-local numerics = {'priority', 'timeout', 'failed_timeout', 'max_fails'}
-
-local default_host = {
-    host = '',
-    port = 80,
-    up = true,
-    weight = 0,
-    failcount = 0,
-    lastfail = 0
-}
-
-local available_methods = { }
+_M.available_methods = { }
 
 local pools_key = 'pools'
 local priority_key = 'priority_index'
 local background_flag = 'background_running'
 local background_period = 60
-
-local function sortPools(self, pools)
-    -- Create a table of priorities and a map back to the pool
-    local priorities = {}
-    local map = {}
-    for id,p in pairs(pools) do
-        map[p.priority] = id
-        tbl_insert(priorities, p.priority)
-    end
-    tbl_sort(priorities)
-
-    local sorted_pools = {}
-    for k,pri in ipairs(priorities) do
-        tbl_insert(sorted_pools, map[pri])
-    end
-
-    local serialised = serialise(sorted_pools)
-    return self.dict:set(priority_key, serialised)
-end
-
-local function savePools(self, pools)
-    local serialised = serialise(pools)
-    return self.dict:set(pools_key, serialised)
-end
 
 local background_thread
 background_thread = function(premature, self)
@@ -130,182 +84,28 @@ function _M.getPools(self)
     return loadstring(pool_str)()
 end
 
-function _M.setMethod(self, poolid, method)
-    if not available_methods[method] then
-        return nil, 'Method not found'
-    end
-
-    local pools = self:getPools()
-    if not pools[poolid] then
-        return nil, 'Pool not found'
-    end
-    pools[poolid].method = method
-
-    return savePools(self, pools)
+function _M.savePools(self, pools)
+    local serialised = serialise(pools)
+    return self.dict:set(pools_key, serialised)
 end
 
-local function validatePool(opts, pools)
-    if pools[opts.id] then
-        return nil, 'Pool exists'
+function _M.sortPools(self, pools)
+    -- Create a table of priorities and a map back to the pool
+    local priorities = {}
+    local map = {}
+    for id,p in pairs(pools) do
+        map[p.priority] = id
+        tbl_insert(priorities, p.priority)
+    end
+    tbl_sort(priorities)
+
+    local sorted_pools = {}
+    for k,pri in ipairs(priorities) do
+        tbl_insert(sorted_pools, map[pri])
     end
 
-    for _,key in ipairs(numerics) do
-        if opts[key] and type(opts[key]) ~= "number" then
-            return nil, key.. " must be a number"
-        end
-    end
-    if opts[method] and not available_methods[opts[method]] then
-        return nil, 'Method not available'
-    end
-    return true
-end
-
-function _M.createPool(self, opts)
-    local poolid = opts.id
-    if not poolid then
-        return nil, 'No ID set'
-    end
-
-    local pools = self:getPools()
-
-    local ok, err = validatePool(opts, pools)
-    if not ok then
-        return ok, err
-    end
-
-    local pool = {}
-    for k,v in pairs(default_pool) do
-        local val = opts[k] or v
-        -- Can't set 'up' or 'hosts' values here
-        if k == 'up' or k == 'hosts' then
-            val = v
-        end
-        pool[k] = val
-    end
-    pools[poolid] = pool
-
-    local ok, err = savePools(self, pools)
-    if not ok then
-        return ok, err
-    end
-    ngx.log(ngx.DEBUG, 'Created pool '..poolid)
-    return sortPools(self, pools)
-end
-
-function _M.setPriority(self, poolid, priority)
-    if type(priority) ~= 'number' then
-        return nil, 'Priority must be a number'
-    end
-
-    local pools = self:getPools()
-    if pools[poolid] == nil then
-        return nil, 'Pool not found'
-    end
-
-    pools[poolid].priority = priority
-
-    local ok, err = savePools(self, pools)
-    if not ok then
-        return ok, err
-    end
-    return sortPools(self, pools)
-end
-
-function _M.setWeight(self, poolid, weight)
-
-end
-
-function _M.addHost(self, poolid, host)
-    local pools = self:getPools()
-    if pools[poolid] == nil then
-        return nil, 'Pool not found'
-    end
-    local pool = pools[poolid]
-
-    -- Validate host definition and set defaults
-    local hostid = host['id']
-    if not hostid or pool.hosts[hostid] ~= nil then
-        hostid = tbl_len(pool.hosts)+1
-    end
-
-    local new_host = {}
-    for key, default in pairs(default_host) do
-        if key == 'id' then
-            default = count
-        end
-        local val = host[key] or default
-        new_host[key] = val
-    end
-
-    pool.hosts[hostid] = new_host
-
-    return savePools(self, pools)
-end
-
-function _M.removeHost(self, poolid, host)
-    if not poolid or not host then
-        return nil, 'Pool or host not specified'
-    end
-    local pools = self:getPools()
-    if not pools then
-        return nil, 'No Pools'
-    end
-    local pool = pools[poolid]
-    if not pool then
-        return nil, 'Pool not found'
-    end
-
-    pool.hosts[host] = nil
-
-    return savePools(self, pools)
-end
-
-function _M.hostDown(self, poolid, host)
-    if not poolid or not host then
-        return nil, 'Pool or host not specified'
-    end
-    local pools = self:getPools()
-    if not pools then
-        return nil, 'No Pools'
-    end
-    local pool = pools[poolid]
-    if not pool then
-        return nil, 'Pool '.. poolid ..' not found'
-    end
-    local host = pool.hosts[host]
-    if not host then
-        return nil, 'Host not found'
-    end
-
-    host.up = false
-    host.manual = true
-    ngx_log(ngx_debug, str_format('Host "%s" in Pool "%s" is manually down', host.id, poolid))
-
-    return savePools(self, pools)
-end
-
-function _M.hostUp(self, poolid, host)
-    if not poolid or not host then
-        return nil, 'Pool or host not specified'
-    end
-    local pools = self:getPools()
-    if not pools then
-        return nil, 'No Pools'
-    end
-    local pool = pools[poolid]
-    if not pool then
-        return nil, 'Pool not found'
-    end
-    local host = pool.hosts[host]
-    if not host then
-        return nil, 'Host not found'
-    end
-
-    host.up = true
-    host.manual = nil
-    ngx_log(ngx_debug, str_format('Host "%s" in Pool "%s" is manually up', host.id, poolid))
-
-    return savePools(self, pools)
+    local serialised = serialise(sorted_pools)
+    return self.dict:set(priority_key, serialised)
 end
 
 function _M.postProcess(self)
@@ -331,7 +131,7 @@ function _M.postProcess(self)
         end
     end
 
-    return savePools(self, pools)
+    return self:savePools(pools)
 end
 
 function _M._backgroundFunc(self)
@@ -353,7 +153,7 @@ function _M._backgroundFunc(self)
         end
     end
 
-    return savePools(self, pools)
+    return self:savePools(pools)
 end
 
 -- Fast path
@@ -386,7 +186,7 @@ local function connectFailed(failed_hosts, id, host, port, poolid)
     ngx_log(ngx_err, str_format('Failed connecting to Host "%s" (%s:%d) from pool "%s"', id, host, port, poolid))
 end
 
-available_methods.round_robin = function(self, live_hosts, total_weight, sock, poolid)
+_M.available_methods.round_robin = function(self, live_hosts, total_weight, sock, poolid)
     local err
 
     local failed = self.ctx().failed
@@ -467,6 +267,8 @@ function _M.connect(self, sock)
     if not pools then
         return nil, 'Pools broken'
     end
+
+    local available_methods = self.available_methods
 
     -- Add pools to ctx for post-processing
     local ctx = self.ctx()

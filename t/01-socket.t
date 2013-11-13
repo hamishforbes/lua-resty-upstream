@@ -14,23 +14,46 @@ our $HttpConfig = qq{
     lua_shared_dict test_upstream 1m;
 
     init_by_lua '
-        socket_upstream = require("resty.upstream.socket")
+        upstream_socket  = require("resty.upstream.socket")
 
-        local dict = ngx.shared["test_upstream"]
-        dict:delete("pools")
+        upstream, configured = upstream_socket:new("test_upstream")
 
-        upstream, configured = socket_upstream:new("test_upstream")
+        local pools = {
+                primary = {
+                    up = true,
+                    method = "round_robin",
+                    timeout = 100,
+                    priority = 0,
+                    hosts = {
+                        web01 = { host = "127.0.0.1", weight = 10, port = "80", lastfail = 0, failcount = 0, up = true },
+                        web02 = { host = "127.0.0.1", weight = 10, port = "80", lastfail = 0, failcount = 0, up = true }
+                    }
+                },
+               tertiary = {
+                    up = true,
+                    method = "round_robin",
+                    timeout = 2000,
+                    priority = 15,
+                    hosts = {
+                        { host = "10.10.10.1", weight = 10, port = "81", lastfail = 0, failcount = 0, up = true }
 
-        upstream:createPool({id = "primary", timeout = 100})
-        upstream:setMethod("primary", "round_robin")
+                    }
+                },
+                secondary = {
+                    up = true,
+                    method = "round_robin",
+                    timeout = 2000,
+                    priority = 10,
+                    hosts = {
+                        dr01 = { host = "10.10.10.1", weight = 10, port = "80", lastfail = 0, failcount = 0, up = true }
 
-        upstream:addHost("primary", { id="a", host = "127.0.0.1", port = "80", weight = 10 })
-        upstream:addHost("primary", { id="b", host = "127.0.0.1", port = "81", weight = 10 })
+                    }
+                }
+            }
 
-        upstream:createPool({id = "tertiary", timeout = 100, priority = 30})
+        upstream:savePools(pools)
+        upstream:sortPools(pools)
 
-        upstream:createPool({id = "secondary"})
-        upstream:setPriority("secondary", 20)
     ';
 };
 
