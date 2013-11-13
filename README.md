@@ -14,7 +14,7 @@ Upstream connection load balancing and failover module
     * [savePools](#savePools)
     * [sortPools](#sortPools)
 * [upstream.api](#upstream.api)
-    * [new](#upstream_new)
+    * [new](#new-1)
     * [setMethod](#setMethod)
     * [createPool](#createPool)
     * [setPriority](#setPriority)
@@ -82,13 +82,13 @@ server {
 
 # upstream.socket
 
-## new
+### new
 `syntax: upstream, configured = socket_upstream:new(dictionary)`
 
 Returns a new upstream object using the provided dictionary name.
 When called in init_by_lua returns an additional variable if the dictionary already contains configuration.
 
-## connect
+### connect
 `syntax: ok, err = upstream:connect(client?)`
 
 Attempts to connect to a host in the defined pools in priority order using the selected load balancing method.
@@ -112,13 +112,13 @@ ngx.log(ngx.info, 'Connected to ' .. err.host.host .. ':' .. err.host.port)
 local ok, err = redis:get('key')
 ```
 
-## postProcess
+### postProcess
 `syntax: ok, err = upstream:postProcess()`
 
 Processes any failed or recovered hosts from the current request
 
 
-## getPools
+### getPools
 `syntax: pools = usptream:getPools()`
 
 Returns a table containing the current pool and host configuration.
@@ -170,34 +170,34 @@ e.g.
 }
 ```
 
-## savePools
+### savePools
 `syntax: ok, err = upstream:savePools(pools)`
 
 Saves a table of pools to the shared dictionary, `pools` must be in the same format as returned from `getPools`
 
-## sortPools
+### sortPools
 `syntax: ok, err = upstream:sortPools(pools)`
 
 Generates a priority order in the shared dictionary based on the table of pools provided
 
 
 
-# upstream.api
+### upstream.api
 These functions allow you to dynamically reconfigure upstream pools and hosts
 
-## new
+### new
 `syntax: api, err = upstream_api:new(upstream)`
 
 Returns a new api object using the provided upstream object.
 
 
-## setMethod
+### setMethod
 `syntax: ok, err = api:setMethod(poolid, method)`
 
 Sets the load balancing method for the specified pool.
 Currently only randomised round robin is supported.
 
-## createPool
+### createPool
 `syntax: ok, err = api:createPool(pool)`
 
 Creates a new pool from a table of options, `pool` must contain at least 1 key `id` which must be unique within the current upstream object.
@@ -209,12 +209,12 @@ Default pool values
 { method = 'round_robin', timeout = 2000, priority = 0 }
 ```
 
-## setPriority
+### setPriority
 `syntax: ok, err = api:setPriority(poolid, priority)`
 
 Priority must be a number, returns nil on error.
 
-## addHost
+### addHost
 `syntax: ok, err = api:addHost(poolid, host)`
 
 Takes a pool ID and a table of options, `host` must contain at least `host`.
@@ -225,21 +225,20 @@ Defaults:
 { host = '', port = 80, weight = 0}
 ```
 
-## removeHost
+### removeHost
 `syntax: ok, err = api:removeHost(poolid, host)`
 
 Takes a poolid and a hostid to remove from the pool
 
-## hostDown
+### hostDown
 `syntax: ok,err = api:hostDown(poolid, host)`
 
 Manually marks a host as down, this host will *not* be revived automatically.
 
-## hostUp
+### hostUp
 `syntax: ok,err = api:hostUp(poolid, host)`
 
 Manually restores a dead host to the pool
-
 
 ## TODO
  * IP based sticky sessions
