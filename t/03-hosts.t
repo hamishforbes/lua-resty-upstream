@@ -20,9 +20,9 @@ our $HttpConfig = qq{
         upstream, configured = upstream_socket:new("test_upstream")
         test_api = upstream_api:new(upstream)
 
-        test_api:createPool({id = "primary", timeout = 100})
+        test_api:create_pool({id = "primary", timeout = 100})
 
-        test_api:createPool({id = "secondary", timeout = 100, priority = 10})
+        test_api:create_pool({id = "secondary", timeout = 100, priority = 10})
         ';
 };
 
@@ -40,7 +40,7 @@ __DATA__
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
 
             local ok, err = upstream:connect()
             if ok then
@@ -63,15 +63,15 @@ OK
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
 
             -- Simulate 3 connection attempts
             for i=1,3 do
                 upstream:connect()
-                upstream:postProcess()
+                upstream:post_process()
             end
 
-            pools = upstream:getPools()
+            pools = upstream:get_pools()
 
             if pools.primary.hosts.a.up then
                 ngx.status = 500
@@ -93,16 +93,16 @@ OK
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 9999 })
-            test_api:addHost("primary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1 })
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 9999 })
+            test_api:add_host("primary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1 })
 
             -- Simulate 3 connection attempts
             for i=1,3 do
                 upstream:connect()
-                upstream:postProcess()
+                upstream:post_process()
             end
 
-            pools = upstream:getPools()
+            pools = upstream:get_pools()
 
             if pools.primary.hosts.a.up then
                 ngx.say("FAIL")
@@ -124,11 +124,11 @@ OK
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
-            test_api:hostDown("primary", "a")
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:down_host("primary", "a")
             upstream:_backgroundFunc()
 
-            local pools, err = upstream:getPools()
+            local pools, err = upstream:get_pools()
 
             if pools.primary.hosts.a.up ~= false or pools.primary.hosts.a.manual == nil then
                 ngx.status = 500

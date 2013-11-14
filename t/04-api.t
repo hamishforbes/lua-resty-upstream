@@ -20,9 +20,9 @@ our $HttpConfig = qq{
         upstream, configured = upstream_socket:new("test_upstream")
         test_api = upstream_api:new(upstream)
 
-        test_api:createPool({id = "primary", timeout = 100})
+        test_api:create_pool({id = "primary", timeout = 100})
 
-        test_api:createPool({id = "secondary", timeout = 100, priority = 10})
+        test_api:create_pool({id = "secondary", timeout = 100, priority = 10})
     ';
 };
 
@@ -40,7 +40,7 @@ __DATA__
 --- config
     location = /a {
         content_by_lua '
-            local ok,err = test_api:createPool({id = "primary"})
+            local ok,err = test_api:create_pool({id = "primary"})
             if not ok then
                 ngx.status = 200
             else
@@ -58,7 +58,7 @@ GET /a
 --- config
     location = /a {
         content_by_lua '
-            local ok, err = test_api:setMethod("primary", "foobar")
+            local ok, err = test_api:set_method("primary", "foobar")
             if not ok then
                 ngx.status = 200
             else
@@ -76,7 +76,7 @@ GET /a
 --- config
     location = /a {
         content_by_lua '
-            local ok, err = test_api:setPriority("primary", "foobar")
+            local ok, err = test_api:set_priority("primary", "foobar")
             if not ok then
                 ngx.status = 200
             else
@@ -94,7 +94,7 @@ GET /a
 --- config
     location = /a {
         content_by_lua '
-            local ok, err = test_api:createPool({
+            local ok, err = test_api:create_pool({
                     id = "testpool",
                     priority = "abcd",
                     timeout = "foo",
@@ -120,7 +120,7 @@ GET /a
 --- config
     location = / {
         content_by_lua '
-            local ok, err = test_api:addHost("foobar", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
+            local ok, err = test_api:add_host("foobar", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
             if not ok then
                 ngx.status = 200
             else
@@ -133,15 +133,15 @@ GET /a
 GET /
 --- errorcode: 200
 
-=== TEST 6: addHost works
+=== TEST 6: add_host works
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
 
-            local pools, err = upstream:getPools()
+            local pools, err = upstream:get_pools()
             if pools.primary.hosts.a == nil then
                 ngx.status = 500
                 ngx.say(err)
@@ -157,12 +157,12 @@ GET /
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
-            test_api:addHost("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
-            test_api:addHost("primary", { id="foo", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:add_host("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:add_host("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:add_host("primary", { id="foo", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
 
-            local pools, err = upstream:getPools()
+            local pools, err = upstream:get_pools()
             local ids = {}
             for k,v in pairs(pools.primary.hosts) do
                 table.insert(ids, tostring(k))
@@ -181,15 +181,15 @@ GET /
 a
 foo
 
-=== TEST 8: hostDown marks host down and sets manual flag
+=== TEST 8: down_host marks host down and sets manual flag
 --- http_config eval: $::HttpConfig
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
-            test_api:hostDown("primary", "a")
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:down_host("primary", "a")
 
-            local pools, err = upstream:getPools()
+            local pools, err = upstream:get_pools()
             if pools.primary.hosts.a.up ~= false or pools.primary.hosts.a.manual == nil then
                 ngx.status = 500
             end
@@ -199,17 +199,17 @@ foo
 GET /
 --- error_code: 200
 
-=== TEST 9: hostUp marks host up and clears manual flag
+=== TEST 9: up_host marks host up and clears manual flag
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
-            test_api:hostDown("primary", "a")
-            test_api:hostUp("primary", "a")
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:down_host("primary", "a")
+            test_api:up_host("primary", "a")
 
-            local pools, err = upstream:getPools()
+            local pools, err = upstream:get_pools()
             if pools.primary.hosts.a.up ~= true or pools.primary.hosts.a.manual ~= nil then
                 ngx.status = 500
                 ngx.say(err)
@@ -220,16 +220,16 @@ GET /
 GET /
 --- error_code: 200
 
-=== TEST 10: removeHost deletes host
+=== TEST 10: remove_host deletes host
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
-            test_api:removeHost("primary", "a")
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:remove_host("primary", "a")
 
-            local pools, err = upstream:getPools()
+            local pools, err = upstream:get_pools()
             if pools.primary.hosts.a ~= nil then
                 ngx.status = 500
                 ngx.say(err)
@@ -240,15 +240,15 @@ GET /
 GET /
 --- error_code: 200
 
-=== TEST 11: api:getPools passes through to upstream
+=== TEST 11: api:get_pools passes through to upstream
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
     location = / {
         content_by_lua '
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
 
-            local pools, err = test_api:getPools()
+            local pools, err = test_api:get_pools()
             if pools.primary.hosts.a == nil then
                 ngx.status = 500
                 ngx.say(err)

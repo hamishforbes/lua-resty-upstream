@@ -51,8 +51,8 @@ our $HttpConfig = qq{
                 }
             }
 
-        upstream:savePools(pools)
-        upstream:sortPools(pools)
+        upstream:save_pools(pools)
+        upstream:sort_pools(pools)
 
     ';
 };

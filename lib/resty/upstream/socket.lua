@@ -79,17 +79,17 @@ function _M.ctx(self)
 end
 
 -- Slow(ish) config / api functions
-function _M.getPools(self)
+function _M.get_pools(self)
     local pool_str = self.dict:get(pools_key)
     return loadstring(pool_str)()
 end
 
-function _M.savePools(self, pools)
+function _M.save_pools(self, pools)
     local serialised = serialise(pools)
     return self.dict:set(pools_key, serialised)
 end
 
-function _M.sortPools(self, pools)
+function _M.sort_pools(self, pools)
     -- Create a table of priorities and a map back to the pool
     local priorities = {}
     local map = {}
@@ -108,7 +108,7 @@ function _M.sortPools(self, pools)
     return self.dict:set(priority_key, serialised)
 end
 
-function _M.postProcess(self)
+function _M.post_process(self)
     local ctx = self.ctx()
     local pools = ctx.pools
     local failed = ctx.failed
@@ -131,14 +131,14 @@ function _M.postProcess(self)
         end
     end
 
-    return self:savePools(pools)
+    return self:save_pools(pools)
 end
 
 function _M._backgroundFunc(self)
     local now = now()
 
     -- Reset state for any failed hosts
-    local pools = self:getPools()
+    local pools = self:get_pools()
     for poolid,pool in pairs(pools) do
         local failed_timeout = pool.failed_timeout
         local max_fails = pool.max_fails
@@ -153,7 +153,7 @@ function _M._backgroundFunc(self)
         end
     end
 
-    return self:savePools(pools)
+    return self:save_pools(pools)
 end
 
 -- Fast path
@@ -313,8 +313,8 @@ function _M.connect(self, sock)
             end
 
             if connected then
-                ngx_log(ngx_debug, str_format('Connected to Host "%s" (%s:%d) from pool "%s"', host.id, host.host, host.port, poolid))
-                return sock, {host = host, pool = pool}
+                --ngx_log(ngx_debug, str_format('Connected to Host "%s" (%s:%d) from pool "%s"', host.id, host.host, host.port, poolid))
+                return sock, {host = host, poolid = poolid, pool = pool}
             end
             -- Failed to connect, try next pool
         end

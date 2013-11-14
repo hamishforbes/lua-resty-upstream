@@ -9,19 +9,19 @@ Upstream connection load balancing and failover module
 * [upstream.socket](#upstream.socket)
     * [new](#new)
     * [connect](#connect)
-    * [postProcess](#postProcess)
-    * [getPools](#getPools)
-    * [savePools](#savePools)
-    * [sortPools](#sortPools)
+    * [post_process](#post_process)
+    * [get_pools](#get_pools)
+    * [save_pools](#save_pools)
+    * [sort_pools](#sort_pools)
 * [upstream.api](#upstream.api)
     * [new](#new-1)
-    * [setMethod](#setMethod)
-    * [createPool](#createPool)
-    * [setPriority](#setPriority)
-    * [addHost](#addHost)
-    * [removeHost](#removeHost)
-    * [hostDown](#hostDown)
-    * [hostUp](#hostUp)
+    * [set_method](#set_method)
+    * [create_pool](#create_pool)
+    * [set_priority](#set_priority)
+    * [add_host](#add_host)
+    * [remove_host](#remove_host)
+    * [down_host](#down_host)
+    * [up_host](#up_host)
 
 #Status
 
@@ -36,7 +36,7 @@ Use the `connect` method to return a connected tcp [socket](https://github.com/c
 
 Alternatively pass in a resty module (e.g [lua-resty-redis](https://github.com/agentzh/lua-resty-redis)) that implements `connect()` and `set_timeout()`.
 
-Call `postProcess` in log_by_lua to handle failed hosts etc.
+Call `post_process` in log_by_lua to handle failed hosts etc.
 
 Use `resty.upstream.api` to modify upstream configuration during init or runtime, this is recommended!
 
@@ -50,20 +50,20 @@ init_by_lua '
     api = upstream_api:new(upstream)
 
     if not configured then -- Only reconfigure on start, shared mem persists across a HUP
-        api:createPool({id = "primary", timeout = 100})
-        api:setPriority("primary", 0)
-        api:setMethod("primary", "round_robin")
-        api:addHost("primary", { id="a", host = "127.0.0.1", port = "80", weight = 10 })
-        api:addHost("primary", { id="b", host = "127.0.0.1", port = "81",  weight = 10 })
+        api:create_pool({id = "primary", timeout = 100})
+        api:set_priority("primary", 0)
+        api:set_method("primary", "round_robin")
+        api:add_host("primary", { id="a", host = "127.0.0.1", port = "80", weight = 10 })
+        api:add_host("primary", { id="b", host = "127.0.0.1", port = "81",  weight = 10 })
 
-        api:createPool({id = "dr"})
-        api:setPriority("dr", 10)
-        api:addHost("dr", { host = "127.0.0.1", port = "82", weight = 5 })
-        api:addHost("dr", { host = "127.0.0.1", port = "83", weight = 10 })
+        api:create_pool({id = "dr"})
+        api:set_priority("dr", 10)
+        api:add_host("dr", { host = "127.0.0.1", port = "82", weight = 5 })
+        api:add_host("dr", { host = "127.0.0.1", port = "83", weight = 10 })
 
-        api:createPool({id = "test", priority = 5})
-        api:addHost("primary", { id="c", host = "127.0.0.1", port = "82", weight = 10 })
-        api:addHost("primary", { id="d", host = "127.0.0.1", port = "83", weight = 10 })
+        api:create_pool({id = "test", priority = 5})
+        api:add_host("primary", { id="c", host = "127.0.0.1", port = "82", weight = 10 })
+        api:add_host("primary", { id="d", host = "127.0.0.1", port = "83", weight = 10 })
     end
 ';
 
@@ -74,7 +74,7 @@ server {
             local sock, err = upstream:connect()
         ';
 
-        log_by_lua 'upstream:postProcess()';
+        log_by_lua 'upstream:post_process()';
     }
 
 }
@@ -92,7 +92,7 @@ When called in init_by_lua returns an additional variable if the dictionary alre
 `syntax: ok, err = upstream:connect(client?)`
 
 Attempts to connect to a host in the defined pools in priority order using the selected load balancing method.
-Returns a connected socket and a table containing the connected `host` and `pool` or nil and an error message.
+Returns a connected socket and a table containing the connected `host`, `poolid` and `pool` or nil and an error message.
 
 When passed a [socket](https://github.com/chaoslawful/lua-nginx-module#ngxsockettcp) or resty module it will return the same object after successful connection or nil.
 
@@ -112,14 +112,14 @@ ngx.log(ngx.info, 'Connected to ' .. err.host.host .. ':' .. err.host.port)
 local ok, err = redis:get('key')
 ```
 
-### postProcess
-`syntax: ok, err = upstream:postProcess()`
+### post_process
+`syntax: ok, err = upstream:post_process()`
 
 Processes any failed or recovered hosts from the current request
 
 
-### getPools
-`syntax: pools = usptream:getPools()`
+### get_pools
+`syntax: pools = usptream:get_pools()`
 
 Returns a table containing the current pool and host configuration.
 e.g.
@@ -169,13 +169,13 @@ e.g.
 }
 ```
 
-### savePools
-`syntax: ok, err = upstream:savePools(pools)`
+### save_pools
+`syntax: ok, err = upstream:save_pools(pools)`
 
-Saves a table of pools to the shared dictionary, `pools` must be in the same format as returned from `getPools`
+Saves a table of pools to the shared dictionary, `pools` must be in the same format as returned from `get_pools`
 
-### sortPools
-`syntax: ok, err = upstream:sortPools(pools)`
+### sort_pools
+`syntax: ok, err = upstream:sort_pools(pools)`
 
 Generates a priority order in the shared dictionary based on the table of pools provided
 
@@ -190,14 +190,14 @@ These functions allow you to dynamically reconfigure upstream pools and hosts
 Returns a new api object using the provided upstream object.
 
 
-### setMethod
-`syntax: ok, err = api:setMethod(poolid, method)`
+### set_method
+`syntax: ok, err = api:set_method(poolid, method)`
 
 Sets the load balancing method for the specified pool.
 Currently only randomised round robin is supported.
 
-### createPool
-`syntax: ok, err = api:createPool(pool)`
+### create_pool
+`syntax: ok, err = api:create_pool(pool)`
 
 Creates a new pool from a table of options, `pool` must contain at least 1 key `id` which must be unique within the current upstream object.
 Other valid options are `method`, `timeout`, and `priority`.
@@ -208,13 +208,13 @@ Default pool values
 { method = 'round_robin', timeout = 2000, priority = 0 }
 ```
 
-### setPriority
-`syntax: ok, err = api:setPriority(poolid, priority)`
+### set_priority
+`syntax: ok, err = api:set_priority(poolid, priority)`
 
 Priority must be a number, returns nil on error.
 
-### addHost
-`syntax: ok, err = api:addHost(poolid, host)`
+### add_host
+`syntax: ok, err = api:add_host(poolid, host)`
 
 Takes a pool ID and a table of options, `host` must contain at least `host`.
 If the host ID is not specified it will be a numeric index based on the number of hosts in the pool.
@@ -224,18 +224,18 @@ Defaults:
 { host = '', port = 80, weight = 0}
 ```
 
-### removeHost
-`syntax: ok, err = api:removeHost(poolid, host)`
+### remove_host
+`syntax: ok, err = api:remove_host(poolid, host)`
 
 Takes a poolid and a hostid to remove from the pool
 
-### hostDown
-`syntax: ok,err = api:hostDown(poolid, host)`
+### down_host
+`syntax: ok,err = api:down_host(poolid, host)`
 
 Manually marks a host as down, this host will *not* be revived automatically.
 
-### hostUp
-`syntax: ok,err = api:hostUp(poolid, host)`
+### up_host
+`syntax: ok,err = api:up_host(poolid, host)`
 
 Manually restores a dead host to the pool
 

@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (3);
+plan tests => repeat_each() * (2);
 
 my $pwd = cwd();
 
@@ -20,9 +20,9 @@ our $HttpConfig = qq{
         upstream, configured = upstream_socket:new("test_upstream")
         test_api = upstream_api:new(upstream)
 
-        test_api:createPool({id = "primary", timeout = 100})
+        test_api:create_pool({id = "primary", timeout = 10})
 
-        test_api:createPool({id = "secondary", timeout = 100, priority = 10})
+        test_api:create_pool({id = "secondary", timeout = 100, priority = 10})
     ';
 };
 
@@ -41,23 +41,23 @@ __DATA__
     location = /a {
         content_by_lua '
         -- Bad hosts
-            test_api:addHost("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
-            test_api:addHost("primary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
+            test_api:add_host("primary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
         -- Good hosts
-            test_api:addHost("secondary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-            test_api:addHost("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
+            test_api:add_host("secondary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
+            test_api:add_host("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
 
             local sock, err = upstream:connect()
             if not sock then
+                ngx.log(ngx.ERR, err)
                 ngx.say(err)
             else
                 sock:close()
-                ngx.say("OK")
+                ngx.say(err.poolid)
             end
         ';
     }
 --- request
 GET /a
 --- response_body
-OK
---- error_log: from pool "secondary"
+secondary

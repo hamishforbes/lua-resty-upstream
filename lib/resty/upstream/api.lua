@@ -38,27 +38,27 @@ function _M.new(_, upstream)
     local self = {
         upstream = upstream,
         dict = upstream.dict,
-        getPools = upstream.getPools,
-        savePools = upstream.savePools,
-        sortPools = upstream.sortPools
+        get_pools = upstream.get_pools,
+        save_pools = upstream.save_pools,
+        sort_pools = upstream.sort_pools
     }
     return setmetatable(self, mt), configured
 end
 
-function _M.setMethod(self, poolid, method)
+function _M.set_method(self, poolid, method)
     local available_methods = self.upstream.available_methods
 
     if not available_methods[method] then
         return nil, 'Method not found'
     end
 
-    local pools = self:getPools()
+    local pools = self:get_pools()
     if not pools[poolid] then
         return nil, 'Pool not found'
     end
     pools[poolid].method = method
 
-    return self:savePools(pools)
+    return self:save_pools(pools)
 end
 
 local function validatePool(opts, pools)
@@ -77,13 +77,13 @@ local function validatePool(opts, pools)
     return true
 end
 
-function _M.createPool(self, opts)
+function _M.create_pool(self, opts)
     local poolid = opts.id
     if not poolid then
         return nil, 'No ID set'
     end
 
-    local pools = self:getPools()
+    local pools = self:get_pools()
 
     local ok, err = validatePool(opts, pools)
     if not ok then
@@ -101,39 +101,39 @@ function _M.createPool(self, opts)
     end
     pools[poolid] = pool
 
-    local ok, err = self:savePools(pools)
+    local ok, err = self:save_pools(pools)
     if not ok then
         return ok, err
     end
     ngx.log(ngx.DEBUG, 'Created pool '..poolid)
-    return self:sortPools(pools)
+    return self:sort_pools(pools)
 end
 
-function _M.setPriority(self, poolid, priority)
+function _M.set_priority(self, poolid, priority)
     if type(priority) ~= 'number' then
         return nil, 'Priority must be a number'
     end
 
-    local pools = self:getPools()
+    local pools = self:get_pools()
     if pools[poolid] == nil then
         return nil, 'Pool not found'
     end
 
     pools[poolid].priority = priority
 
-    local ok, err = self:savePools(pools)
+    local ok, err = self:save_pools(pools)
     if not ok then
         return ok, err
     end
-    return self:sortPools(pools)
+    return self:sort_pools(pools)
 end
 
 function _M.setWeight(self, poolid, weight)
 
 end
 
-function _M.addHost(self, poolid, host)
-    local pools = self:getPools()
+function _M.add_host(self, poolid, host)
+    local pools = self:get_pools()
     if pools[poolid] == nil then
         return nil, 'Pool not found'
     end
@@ -153,14 +153,14 @@ function _M.addHost(self, poolid, host)
 
     pool.hosts[hostid] = new_host
 
-    return self:savePools(pools)
+    return self:save_pools(pools)
 end
 
-function _M.removeHost(self, poolid, host)
+function _M.remove_host(self, poolid, host)
     if not poolid or not host then
         return nil, 'Pool or host not specified'
     end
-    local pools = self:getPools()
+    local pools = self:get_pools()
     if not pools then
         return nil, 'No Pools'
     end
@@ -171,14 +171,14 @@ function _M.removeHost(self, poolid, host)
 
     pool.hosts[host] = nil
 
-    return self:savePools(pools)
+    return self:save_pools(pools)
 end
 
-function _M.hostDown(self, poolid, host)
+function _M.down_host(self, poolid, host)
     if not poolid or not host then
         return nil, 'Pool or host not specified'
     end
-    local pools = self:getPools()
+    local pools = self:get_pools()
     if not pools then
         return nil, 'No Pools'
     end
@@ -195,14 +195,14 @@ function _M.hostDown(self, poolid, host)
     host.manual = true
     ngx_log(ngx_debug, str_format('Host "%s" in Pool "%s" is manually down', host.id, poolid))
 
-    return self:savePools(pools)
+    return self:save_pools(pools)
 end
 
-function _M.hostUp(self, poolid, host)
+function _M.up_host(self, poolid, host)
     if not poolid or not host then
         return nil, 'Pool or host not specified'
     end
-    local pools = self:getPools()
+    local pools = self:get_pools()
     if not pools then
         return nil, 'No Pools'
     end
@@ -219,7 +219,7 @@ function _M.hostUp(self, poolid, host)
     host.manual = nil
     ngx_log(ngx_debug, str_format('Host "%s" in Pool "%s" is manually up', host.id, poolid))
 
-    return self:savePools(pools)
+    return self:save_pools(pools)
 end
 
 return _M
