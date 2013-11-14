@@ -16,7 +16,6 @@ local default_pool = {
     method = 'round_robin',
     timeout = 2000, -- socket timeout
     priority = 0,
-    -- Hosts in this pool must fail `max_fails` times in `failed_timeout` seconds to be marked down for `failed_timeout` seconds
     failed_timeout = 60,
     max_fails = 3,
     hosts = {}
@@ -42,7 +41,7 @@ function _M.new(_, upstream)
         save_pools = upstream.save_pools,
         sort_pools = upstream.sort_pools
     }
-    return setmetatable(self, mt), configured
+    return setmetatable(self, mt)
 end
 
 function _M.set_method(self, poolid, method)
@@ -61,7 +60,7 @@ function _M.set_method(self, poolid, method)
     return self:save_pools(pools)
 end
 
-local function validatePool(opts, pools)
+local function validatePool(opts, pools, methods)
     if pools[opts.id] then
         return nil, 'Pool exists'
     end
@@ -71,7 +70,7 @@ local function validatePool(opts, pools)
             return nil, key.. " must be a number"
         end
     end
-    if opts[method] and not available_methods[opts[method]] then
+    if opts.method and not methods[opts.method] then
         return nil, 'Method not available'
     end
     return true
@@ -85,7 +84,7 @@ function _M.create_pool(self, opts)
 
     local pools = self:get_pools()
 
-    local ok, err = validatePool(opts, pools)
+    local ok, err = validatePool(opts, pools, self.upstream.available_methods)
     if not ok then
         return ok, err
     end
@@ -193,7 +192,12 @@ function _M.down_host(self, poolid, host)
 
     host.up = false
     host.manual = true
-    ngx_log(ngx_debug, str_format('Host "%s" in Pool "%s" is manually down', host.id, poolid))
+    ngx_log(ngx_debug,
+        str_format('Host "%s" in Pool "%s" is manually down',
+            host.id,
+            poolid
+        )
+    )
 
     return self:save_pools(pools)
 end
@@ -217,7 +221,12 @@ function _M.up_host(self, poolid, host)
 
     host.up = true
     host.manual = nil
-    ngx_log(ngx_debug, str_format('Host "%s" in Pool "%s" is manually up', host.id, poolid))
+    ngx_log(ngx_debug,
+        str_format('Host "%s" in Pool "%s" is manually up',
+            host.id,
+            poolid
+        )
+    )
 
     return self:save_pools(pools)
 end

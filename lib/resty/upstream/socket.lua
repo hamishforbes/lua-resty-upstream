@@ -126,7 +126,12 @@ function _M.post_process(self)
             host.failcount = host.failcount + 1
             if host.failcount >= max_fails then
                 host.up = false
-                ngx_log(ngx_err, str_format('Host "%s" in Pool "%s" is down', host.id, poolid))
+                ngx_log(ngx_err,
+                    str_format('Host "%s" in Pool "%s" is down',
+                        host.id,
+                        poolid
+                    )
+                )
             end
         end
     end
@@ -145,7 +150,9 @@ function _M._backgroundFunc(self)
         for hostid, host in pairs(pool.hosts) do
             -- Reset any hosts past their timeout
              if host.lastfail ~= 0 and (host.lastfail + failed_timeout) < now then
-                ngx_log(ngx_info, str_format('Host "%s" in Pool "%s" is up', host.id, poolid))
+                ngx_log(ngx_info,
+                    str_format('Host "%s" in Pool "%s" is up', host.id, poolid)
+                )
                 host.up = true
                 host.failcount = 0
                 host.lastfail = 0
@@ -183,11 +190,18 @@ end
 local function connectFailed(failed_hosts, id, host, port, poolid)
     -- Flag host as failed
     failed_hosts[id] = true
-    ngx_log(ngx_err, str_format('Failed connecting to Host "%s" (%s:%d) from pool "%s"', id, host, port, poolid))
+    ngx_log(ngx_err,
+        str_format('Failed connecting to Host "%s" (%s:%d) from pool "%s"',
+            id,
+            host,
+            port,
+            poolid
+        )
+    )
 end
 
 _M.available_methods.round_robin = function(self, live_hosts, total_weight, sock, poolid)
-    local err
+    local connected, err
 
     local failed = self.ctx().failed
     if not failed[poolid]  then
@@ -225,17 +239,17 @@ _M.available_methods.round_robin = function(self, live_hosts, total_weight, sock
         end
 
         -- Try connecting to the winner
-        local host_id, host_host, host_port, host_weight = host.id, host.host, host.port, host.weight
+        local host_host, host_port = host.host, host.port
         connected, err = sock:connect(host_host, host_port)
 
         if connected then
             return connected, sock, err, host
         else
-            -- Set the tried host to false and drop the total_weight by that weight
+            -- Set the bad host to false and drop total_weight by that weight
             live_hosts[idx] = false
-            total_weight = total_weight - host_weight
+            total_weight = total_weight - host.weight
 
-            connectFailed(failed_hosts, host_id, host_host, host_port, poolid)
+            connectFailed(failed_hosts, host.id, host_host, host_port, poolid)
         end
     until connected
     return nil, sock, err, {}
@@ -309,11 +323,11 @@ function _M.connect(self, sock)
                 end
             elseif num_hosts > 0 then
                 -- Load balance between available hosts using specified method
-                connected, sock, err, host = available_methods[pool.method](self, live_hosts, total_weight, sock, poolid)
+                local method_func = available_methods[pool.method]
+                connected, sock, err, host = method_func(self, live_hosts, total_weight, sock, poolid)
             end
 
             if connected then
-                --ngx_log(ngx_debug, str_format('Connected to Host "%s" (%s:%d) from pool "%s"', host.id, host.host, host.port, poolid))
                 return sock, {host = host, poolid = poolid, pool = pool}
             end
             -- Failed to connect, try next pool
