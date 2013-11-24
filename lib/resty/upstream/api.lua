@@ -44,6 +44,7 @@ function _M.new(_, upstream)
     return setmetatable(self, mt)
 end
 
+
 function _M.set_method(self, poolid, method)
     local available_methods = self.upstream.available_methods
 
@@ -60,6 +61,7 @@ function _M.set_method(self, poolid, method)
     return self:save_pools(pools)
 end
 
+
 local function validatePool(opts, pools, methods)
     if pools[opts.id] then
         return nil, 'Pool exists'
@@ -75,6 +77,7 @@ local function validatePool(opts, pools, methods)
     end
     return true
 end
+
 
 function _M.create_pool(self, opts)
     local poolid = opts.id
@@ -108,6 +111,7 @@ function _M.create_pool(self, opts)
     return self:sort_pools(pools)
 end
 
+
 function _M.set_priority(self, poolid, priority)
     if type(priority) ~= 'number' then
         return nil, 'Priority must be a number'
@@ -127,9 +131,11 @@ function _M.set_priority(self, poolid, priority)
     return self:sort_pools(pools)
 end
 
+
 function _M.setWeight(self, poolid, weight)
 
 end
+
 
 function _M.add_host(self, poolid, host)
     local pools = self:get_pools()
@@ -141,7 +147,11 @@ function _M.add_host(self, poolid, host)
     -- Validate host definition and set defaults
     local hostid = host['id']
     if not hostid or pool.hosts[hostid] ~= nil then
-        hostid = tbl_len(pool.hosts)+1
+        local hostcount = 0
+        for _,_ in pairs(pool.hosts) do
+            hostcount = hostcount +1
+        end
+        hostid = hostcount+1
     end
 
     local new_host = {}
@@ -154,6 +164,7 @@ function _M.add_host(self, poolid, host)
 
     return self:save_pools(pools)
 end
+
 
 function _M.remove_host(self, poolid, host)
     if not poolid or not host then
@@ -172,6 +183,7 @@ function _M.remove_host(self, poolid, host)
 
     return self:save_pools(pools)
 end
+
 
 function _M.down_host(self, poolid, host)
     if not poolid or not host then
@@ -201,6 +213,7 @@ function _M.down_host(self, poolid, host)
 
     return self:save_pools(pools)
 end
+
 
 function _M.up_host(self, poolid, host)
     if not poolid or not host then

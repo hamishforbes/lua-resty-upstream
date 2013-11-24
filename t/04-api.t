@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (12);
+plan tests => repeat_each() * (14);
 
 my $pwd = cwd();
 
@@ -71,6 +71,24 @@ GET /a
 GET /a
 --- error_code: 200
 
+=== TEST 2b: Can set available load-balancing method
+--- http_config eval: $::HttpConfig
+--- config
+    location = /a {
+        content_by_lua '
+            local ok, err = test_api:set_method("primary", "round_robin")
+            if ok then
+                ngx.status = 200
+            else
+                ngx.status = 500
+            end
+            ngx.exit(ngx.status)
+        ';
+    }
+--- request
+GET /a
+--- error_code: 200
+
 === TEST 3: Cannot set non-numeric priority
 --- http_config eval: $::HttpConfig
 --- config
@@ -79,6 +97,29 @@ GET /a
             local ok, err = test_api:set_priority("primary", "foobar")
             if not ok then
                 ngx.status = 200
+            else
+                ngx.status = 500
+            end
+            ngx.exit(ngx.status)
+        ';
+    }
+--- request
+GET /a
+--- error_code: 200
+
+=== TEST 3b: Can set numeric priority
+--- http_config eval: $::HttpConfig
+--- config
+    location = /a {
+        content_by_lua '
+            local ok, err = test_api:set_priority("primary", 5)
+            if ok then
+                local pools = test_api:get_pools()
+                if pools.primary.priority ~= 5 then
+                    ngx.status = 500
+                else
+                    ngx.status = 200
+                end
             else
                 ngx.status = 500
             end
@@ -177,7 +218,7 @@ GET /
 GET /
 --- response_body
 1
-2
+3
 a
 foo
 

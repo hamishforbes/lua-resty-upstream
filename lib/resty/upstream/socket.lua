@@ -12,18 +12,17 @@ local now = ngx.now
 local update_time = ngx.update_time
 local shared = ngx.shared
 local phase = ngx.get_phase
-local loadstring = loadstring
-local serpent = require('resty.upstream.serpent')
-local serialise = serpent.dump
+require('cjson')
+local json_encode = cjson.encode
+local json_decode = cjson.decode
 
 
 local _M = {
     _VERSION = '0.01',
+    available_methods = {}
 }
 
 local mt = { __index = _M }
-
-_M.available_methods = { }
 
 local pools_key = 'pools'
 local priority_key = 'priority_index'
@@ -54,7 +53,7 @@ function _M.new(_, dict_name)
 
     local configured = true
     if phase() == 'init' and dict:get(pools_key) == nil then
-        dict:set(pools_key, serialise({}))
+        dict:set(pools_key, json_encode({}))
         configured = false
     end
 
@@ -63,6 +62,7 @@ function _M.new(_, dict_name)
     }
     return setmetatable(self, mt), configured
 end
+
 
 -- A safe place in ngx.ctx for the current module instance (self).
 function _M.ctx(self)
@@ -78,16 +78,19 @@ function _M.ctx(self)
     return ctx
 end
 
+
 -- Slow(ish) config / api functions
 function _M.get_pools(self)
     local pool_str = self.dict:get(pools_key)
-    return loadstring(pool_str)()
+    return json_decode(pool_str)
 end
 
+
 function _M.save_pools(self, pools)
-    local serialised = serialise(pools)
+    local serialised = json_encode(pools)
     return self.dict:set(pools_key, serialised)
 end
+
 
 function _M.sort_pools(self, pools)
     -- Create a table of priorities and a map back to the pool
@@ -104,9 +107,10 @@ function _M.sort_pools(self, pools)
         tbl_insert(sorted_pools, map[pri])
     end
 
-    local serialised = serialise(sorted_pools)
+    local serialised = json_encode(sorted_pools)
     return self.dict:set(priority_key, serialised)
 end
+
 
 function _M.post_process(self)
     local ctx = self.ctx()
@@ -139,6 +143,7 @@ function _M.post_process(self)
     return self:save_pools(pools)
 end
 
+
 function _M._backgroundFunc(self)
     local now = now()
 
@@ -162,6 +167,7 @@ function _M._backgroundFunc(self)
 
     return self:save_pools(pools)
 end
+
 
 -- Fast path
 local function getLiveHosts(all_hosts)
@@ -187,6 +193,7 @@ local function getLiveHosts(all_hosts)
     return live_hosts, num_hosts, total_weight
 end
 
+
 local function connectFailed(failed_hosts, id, host, port, poolid)
     -- Flag host as failed
     failed_hosts[id] = true
@@ -199,6 +206,7 @@ local function connectFailed(failed_hosts, id, host, port, poolid)
         )
     )
 end
+
 
 _M.available_methods.round_robin = function(self, live_hosts, total_weight, sock, poolid)
     local connected, err
@@ -255,6 +263,7 @@ _M.available_methods.round_robin = function(self, live_hosts, total_weight, sock
     return nil, sock, err, {}
 end
 
+
 function _M.connect(self, sock)
     local dict = self.dict
     local dict_get = dict.get
@@ -270,14 +279,14 @@ function _M.connect(self, sock)
 
     -- Get pool data
     local serialised = dict_get(dict, priority_key)
-    local priority_index =  loadstring(serialised)()
+    local priority_index =  json_decode(serialised)
     local priority_count = #priority_index
     if priority_count == 0 then
         return nil, 'No pools found'
     end
 
     local serialised = dict_get(dict, pools_key)
-    local pools = loadstring(serialised)()
+    local pools = json_decode(serialised)
     if not pools then
         return nil, 'Pools broken'
     end

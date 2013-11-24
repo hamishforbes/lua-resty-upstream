@@ -96,13 +96,15 @@ OK
 --- config
     location = /a {
         content_by_lua '
+            require "cjson"
+
             local dict = ngx.shared["test_upstream"]
 
             local pool_str = dict:get("pools")
-            local pools = loadstring(pool_str)()
+            local pools = cjson.decode(pool_str)
 
             local priority_str = dict:get("priority_index")
-            local priority_index = loadstring(priority_str)()
+            local priority_index = cjson.decode(priority_str)
 
             local fail = true
             for k,v in pairs(pools) do
@@ -140,7 +142,7 @@ OK
             local dict = ngx.shared["test_upstream"]
 
             local priority_str = dict:get("priority_index")
-            local priority_index = loadstring(priority_str)()
+            local priority_index = cjson.decode(priority_str)
 
             for k,v in ipairs(priority_index) do
                 ngx.say(v)

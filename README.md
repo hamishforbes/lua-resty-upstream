@@ -34,7 +34,7 @@ Define your upstream pools and hosts in init_by_lua, this will be saved into the
 
 Use the `connect` method to return a connected tcp [socket](https://github.com/chaoslawful/lua-nginx-module#ngxsockettcp).
 
-Alternatively pass in a resty module (e.g [lua-resty-redis](https://github.com/agentzh/lua-resty-redis)) that implements `connect()` and `set_timeout()`.
+Alternatively pass in a resty module (e.g [lua-resty-redis](https://github.com/agentzh/lua-resty-redis) or [lua-resty-http](https://github.com/pintsize/lua-resty-http)) that implements `connect()` and `set_timeout()`.
 
 Call `post_process` in log_by_lua to handle failed hosts etc.
 
@@ -97,10 +97,10 @@ Returns a connected socket and a table containing the connected `host`, `poolid`
 When passed a [socket](https://github.com/chaoslawful/lua-nginx-module#ngxsockettcp) or resty module it will return the same object after successful connection or nil.
 
 ```lua
-require('resty.redis')
+resty_redis = require('resty.redis')
 local redis = resty_redis.new()
 
-local redis, err = upstream:connect(redis)
+local redis, e = upstream:connect(redis)
 
 if not redis then
     ngx.log(ngx.ERR, err)
