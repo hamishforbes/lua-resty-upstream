@@ -62,7 +62,7 @@ function _M.set_method(self, poolid, method)
 end
 
 
-local function validatePool(opts, pools, methods)
+local function validate_pool(opts, pools, methods)
     if pools[opts.id] then
         return nil, 'Pool exists'
     end
@@ -87,7 +87,7 @@ function _M.create_pool(self, opts)
 
     local pools = self:get_pools()
 
-    local ok, err = validatePool(opts, pools, self.upstream.available_methods)
+    local ok, err = validate_pool(opts, pools, self.upstream.available_methods)
     if not ok then
         return ok, err
     end
@@ -132,8 +132,23 @@ function _M.set_priority(self, poolid, priority)
 end
 
 
-function _M.setWeight(self, poolid, weight)
+function _M.set_weight(self, poolid, host, weight)
+    if type(weight) ~= 'number' then
+        return nil, 'Weight must be a number'
+    end
 
+    local pools = self:get_pools()
+    if pools[poolid] == nil then
+        return nil, 'Pool not found'
+    end
+
+    local hosts = pool.hosts
+    if hosts[host] == nil then
+        return nil, 'Host not found'
+    end
+    hosts[host].weight = weight
+
+    return self:save_pools(pools)
 end
 
 
