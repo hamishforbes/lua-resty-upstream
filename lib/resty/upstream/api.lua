@@ -148,6 +148,11 @@ function _M.set_weight(self, poolid, host, weight)
     end
 
     local pools = self:get_pools()
+    if not pools then
+        return nil, 'No pools found'
+    end
+
+    local pool = pools[poolid]
     if pools[poolid] == nil then
         return nil, 'Pool not found'
     end

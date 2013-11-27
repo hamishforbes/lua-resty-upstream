@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (14);
+plan tests => repeat_each() * (16);
 
 my $pwd = cwd();
 
@@ -298,4 +298,50 @@ GET /
     }
 --- request
 GET /
+--- error_code: 200
+
+=== TEST 12: Cannot set non-numeric weight
+--- http_config eval: $::HttpConfig
+--- config
+    location = /a {
+        content_by_lua '
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            local ok, err = test_api:set_weight("primary", "a", "foobar")
+            if not ok then
+                ngx.status = 200
+            else
+                ngx.status = 500
+            end
+            ngx.exit(ngx.status)
+        ';
+    }
+--- request
+GET /a
+--- error_code: 200
+
+=== TEST 12b: Can set numeric weight
+--- http_config eval: $::HttpConfig
+--- config
+    location = /a {
+        content_by_lua '
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            local ok, err = test_api:set_weight("primary", "a", 5)
+            if ok then
+                local pools = test_api:get_pools()
+                if pools.primary.hosts.a.weight ~= 5 then
+                    ngx.status = 500
+                    ngx.log(ngx.ERR, "Weight set to ".. (pools.primary.hosts.a.weight or "nil"))
+                else
+                    ngx.status = 200
+                end
+            else
+                ngx.say(err)
+                ngx.log(ngx.ERR, err)
+                ngx.status = 500
+            end
+            ngx.exit(ngx.status)
+        ';
+    }
+--- request
+GET /a
 --- error_code: 200
