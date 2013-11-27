@@ -14,13 +14,29 @@ local mt = { __index = _M }
 local default_pool = {
     up = true,
     method = 'round_robin',
-    timeout = 2000, -- socket timeout
+    timeout = 2000, -- socket connect timeout
     priority = 0,
     failed_timeout = 60,
     max_fails = 3,
     hosts = {}
 }
-local numerics = {'priority', 'timeout', 'failed_timeout', 'max_fails'}
+
+local optional_pool = {
+    ['read_timeout'] = true, -- socket timeout after connect
+    ['keepalive_timeout'] = true,
+    ['keepalive_pool'] = true,
+    ['status_codes'] = true
+}
+
+local numerics = {
+    'priority',
+    'timeout',
+    'failed_timeout',
+    'max_fails',
+    'read_timeout',
+    'keepalive_timeout',
+    'keepalive_pool'
+}
 
 local default_host = {
     host = '',
@@ -31,6 +47,9 @@ local default_host = {
     lastfail = 0
 }
 
+local optional_host = {
+    ['healthcheck'] = true
+}
 
 function _M.new(_, upstream)
 
@@ -110,6 +129,12 @@ function _M.create_pool(self, opts)
             val = v
         end
         pool[k] = val
+    end
+    -- Allow additional optional values
+    for k,v in pairs(optional_pool) do
+        if opts[k] then
+            pool[k] = opts[k]
+        end
     end
     pools[poolid] = pool
 

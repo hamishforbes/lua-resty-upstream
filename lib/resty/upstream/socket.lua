@@ -8,11 +8,14 @@ local tbl_insert = table.insert
 local tbl_sort = table.sort
 local randomseed = math.randomseed
 local random = math.random
+local pairs = pairs
+local ipairs = ipairs
+local tostring = tostring
 local now = ngx.now
 local update_time = ngx.update_time
 local shared = ngx.shared
 local phase = ngx.get_phase
-require('cjson')
+local cjson = require('cjson')
 local json_encode = cjson.encode
 local json_decode = cjson.decode
 
@@ -47,7 +50,7 @@ end
 function _M.new(_, dict_name)
     local dict = shared[dict_name]
     if not dict then
-        ngx.log(ngx.ERR, "Shared dictionary not found" )
+        ngx_log(ngx_err, "Shared dictionary not found" )
         return nil
     end
 
@@ -82,7 +85,6 @@ function _M.ctx(self)
 end
 
 
--- Slow(ish) config / api functions
 function _M.get_pools(self)
     local ctx = self:ctx()
     if ctx.pools == nil then
@@ -91,6 +93,7 @@ function _M.get_pools(self)
     end
     return ctx.pools
 end
+
 
 function _M.get_priority_index(self)
 
@@ -101,6 +104,7 @@ function _M.get_priority_index(self)
     end
     return ctx.priority_index
 end
+
 
 function _M.save_pools(self, pools)
     self:ctx().pools = pools
@@ -187,7 +191,6 @@ function _M._background_func(self)
 end
 
 
--- Fast path
 local function get_live_hosts(all_hosts, failed_hosts)
     if all_hosts == nil then
         return {}, 0, 0
