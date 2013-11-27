@@ -130,7 +130,7 @@ function _M.request(self, params)
 
         res, http_err = check_response(self, res, http_err, host, pool)
 
-    until res and res.status
+    until res
 
     self.conn_info = conn_info
     return res, conn_info

@@ -22,6 +22,13 @@ Upstream connection load balancing and failover module
     * [remove_host](#remove_host)
     * [down_host](#down_host)
     * [up_host](#up_host)
+* [upstream.http](#upstream.http)
+    * [status_codes](#status_codes)
+    * [new](#new-2)
+    * [request](#request)
+    * [set_keepalive](#set_keepalive)
+    * [get_reused_times](#get_reused_times)
+    * [close](#close)
 
 #Status
 
@@ -39,6 +46,11 @@ Alternatively pass in a resty module (e.g [lua-resty-redis](https://github.com/a
 Call `post_process` in log_by_lua to handle failed hosts etc.
 
 Use `resty.upstream.api` to modify upstream configuration during init or runtime, this is recommended!
+
+`resty.upstream.http`  wraps the [lua-resty-http](https://github.com/pintsize/lua-resty-http) from @pintsized.
+
+It allows for failover based on HTTP status codes as well as socket connection status.
+
 
 ```lua
 lua_shared_dict my_upstream 1m;
@@ -181,7 +193,7 @@ Generates a priority order in the shared dictionary based on the table of pools 
 
 
 
-### upstream.api
+# upstream.api
 These functions allow you to dynamically reconfigure upstream pools and hosts
 
 ### new
@@ -200,7 +212,7 @@ Currently only randomised round robin is supported.
 `syntax: ok, err = api:create_pool(pool)`
 
 Creates a new pool from a table of options, `pool` must contain at least 1 key `id` which must be unique within the current upstream object.
-Other valid options are `method`, `timeout`, and `priority`.
+Other valid options are `method`, `timeout`, `priority`, `read_timeout`, `keepalive_timeout`, `keepalive_pool` and `status_codes`.
 Hosts cannot be defined at this point.
 
 Default pool values
@@ -238,6 +250,54 @@ Manually marks a host as down, this host will *not* be revived automatically.
 `syntax: ok,err = api:up_host(poolid, host)`
 
 Manually restores a dead host to the pool
+
+# upstream.http
+
+Functions for making http requests to upstream hosts.
+
+### status_codes
+This pool option is an array of status codes that indicate a failed request.
+
+```lua
+{
+    ['5xx'] = true,
+    ['400'] = true
+}
+```
+
+### new
+`syntax: httpc, err = upstream_http:new(upstream)`
+
+Returns a new http upstream object using the provided upstream object.
+
+
+### request
+`syntax: res, conn_info = upstream_api:request(params)`
+
+Takes the same parameters as lua-resty-http's [request](https://github.com/pintsized/lua-resty-http#request) method.
+
+On a successful request returns the lua-resty-http object and a table containing the connected host and pool.
+
+If the request failed returns nil and a table describing the error and suggested http status code
+```lua
+{ err = error_message, status = (502 or 504) }
+```
+
+### set_keepalive
+`syntax: ok, err = upstream_http:set_keepalive()`
+
+Passes the keepalive timeout / pool from the pool configuration through to the lua-resty-http `set_keepalive` method.
+
+### get_reused_times
+`syntax: ok, err = upstream_http:get_reused_times()`
+
+Passes through to the lua-resty-http `get_reused_times` method.
+
+### close
+`syntax: ok, err = upstream_http:close()`
+
+Passes through to the lua-resty-http `close` method.
+
 
 ## TODO
  * IP based sticky sessions
