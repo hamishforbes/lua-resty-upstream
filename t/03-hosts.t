@@ -126,7 +126,7 @@ OK
         content_by_lua '
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
             test_api:down_host("primary", "a")
-            upstream:_backgroundFunc()
+            upstream:_background_func()
 
             local pools, err = upstream:get_pools()
 

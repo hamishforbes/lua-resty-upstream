@@ -35,15 +35,25 @@ local default_host = {
 function _M.new(_, upstream)
 
     local self = {
-        upstream = upstream,
-        dict = upstream.dict,
-        get_pools = upstream.get_pools,
-        save_pools = upstream.save_pools,
-        sort_pools = upstream.sort_pools
+        upstream = upstream
     }
     return setmetatable(self, mt)
 end
 
+
+function _M.get_pools(self, ...)
+    return self.upstream:get_pools(...)
+end
+
+
+function _M.save_pools(self, ...)
+    return self.upstream:save_pools(...)
+end
+
+
+function _M.sort_pools(self, ...)
+    return self.upstream:sort_pools(...)
+end
 
 function _M.set_method(self, poolid, method)
     local available_methods = self.upstream.available_methods

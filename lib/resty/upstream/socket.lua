@@ -37,7 +37,7 @@ background_thread = function(premature, self)
         return
     end
 
-    self:_backgroundFunc()
+    self:_background_func()
 
     -- Call ourselves on a timer again
     local ok, err = ngx.timer.at(background_period, background_thread, self)
@@ -66,14 +66,17 @@ end
 
 -- A safe place in ngx.ctx for the current module instance (self).
 function _M.ctx(self)
+    if phase() == 'init' then
+        return {}
+    end
+    local ngx_ctx = ngx.ctx
     local id = tostring(self)
-    local ctx = ngx.ctx[id]
-    if not ctx then
+    local ctx = ngx_ctx[id]
+    if ctx == nil then
         ctx = {
-            pools = {},
             failed = {}
         }
-        ngx.ctx[id] = ctx
+        ngx_ctx[id] = ctx
     end
     return ctx
 end
@@ -81,12 +84,27 @@ end
 
 -- Slow(ish) config / api functions
 function _M.get_pools(self)
-    local pool_str = self.dict:get(pools_key)
-    return json_decode(pool_str)
+    local ctx = self:ctx()
+    if ctx.pools == nil then
+        local pool_str = self.dict:get(pools_key)
+        ctx.pools = json_decode(pool_str)
+    end
+    return ctx.pools
 end
 
+function _M.get_priority_index(self)
+
+    local ctx = self:ctx()
+    if ctx.priority_index == nil then
+        local priority_str = self.dict:get(priority_key)
+        ctx.priority_index = json_decode(priority_str)
+    end
+    return ctx.priority_index
+end
 
 function _M.save_pools(self, pools)
+    self:ctx().pools = pools
+
     local serialised = json_encode(pools)
     return self.dict:set(pools_key, serialised)
 end
@@ -113,7 +131,7 @@ end
 
 
 function _M.post_process(self)
-    local ctx = self.ctx()
+    local ctx = self:ctx()
     local pools = ctx.pools
     local failed = ctx.failed
     local now = now()
@@ -144,7 +162,7 @@ function _M.post_process(self)
 end
 
 
-function _M._backgroundFunc(self)
+function _M._background_func(self)
     local now = now()
 
     -- Reset state for any failed hosts
@@ -170,7 +188,7 @@ end
 
 
 -- Fast path
-local function getLiveHosts(all_hosts)
+local function get_live_hosts(all_hosts, failed_hosts)
     if all_hosts == nil then
         return {}, 0, 0
     end
@@ -182,7 +200,7 @@ local function getLiveHosts(all_hosts)
     local num_hosts = 0
     for hostid, host in pairs(all_hosts) do
         -- Disregard dead hosts
-        if host.up then
+        if host.up and not failed_hosts[hostid] then
             num_hosts = num_hosts+1
             host.id = hostid
             live_hosts[num_hosts] = host
@@ -194,7 +212,7 @@ local function getLiveHosts(all_hosts)
 end
 
 
-local function connectFailed(failed_hosts, id, host, port, poolid)
+local function connect_failed(failed_hosts, id, host, port, poolid)
     -- Flag host as failed
     failed_hosts[id] = true
     ngx_log(ngx_err,
@@ -211,7 +229,7 @@ end
 _M.available_methods.round_robin = function(self, live_hosts, total_weight, sock, poolid)
     local connected, err
 
-    local failed = self.ctx().failed
+    local failed = self:ctx().failed
     if not failed[poolid]  then
         failed[poolid] = {}
     end
@@ -257,7 +275,7 @@ _M.available_methods.round_robin = function(self, live_hosts, total_weight, sock
             live_hosts[idx] = false
             total_weight = total_weight - host.weight
 
-            connectFailed(failed_hosts, host.id, host_host, host_port, poolid)
+            connect_failed(failed_hosts, host.id, host_host, host_port, poolid)
         end
     until connected
     return nil, sock, err, {}
@@ -278,24 +296,23 @@ function _M.connect(self, sock)
     end
 
     -- Get pool data
-    local serialised = dict_get(dict, priority_key)
-    local priority_index =  json_decode(serialised)
+    local ctx = self:ctx()
+    local failed = ctx.failed
+
+    local priority_index = self:get_priority_index()
+    local pools = self:get_pools()
+
+
+    if not pools then
+        return nil, 'Pools broken'
+    end
+
     local priority_count = #priority_index
     if priority_count == 0 then
         return nil, 'No pools found'
     end
 
-    local serialised = dict_get(dict, pools_key)
-    local pools = json_decode(serialised)
-    if not pools then
-        return nil, 'Pools broken'
-    end
-
     local available_methods = self.available_methods
-
-    -- Add pools to ctx for post-processing
-    local ctx = self.ctx()
-    ctx.pools = pools
 
     -- upvalue these to return errors later
     local connected, err = nil, nil
@@ -313,7 +330,13 @@ function _M.connect(self, sock)
         local pool = pools[poolid]
 
         if pool.up then
-            local live_hosts, num_hosts, total_weight = getLiveHosts(pool.hosts)
+            local failed_hosts = failed[poolid]
+            if not failed_hosts  then
+                failed[poolid] = {}
+                failed_hosts = failed[poolid]
+            end
+
+            local live_hosts, num_hosts, total_weight = get_live_hosts(pool.hosts, failed_hosts)
 
             set_timeout(sock, pool.timeout)
 
@@ -324,11 +347,8 @@ function _M.connect(self, sock)
                 host = live_hosts[1]
                 connected, err = sock:connect(host.host, host.port)
                 if not connected then
-                    local failed = self.ctx().failed
-                    if not failed[poolid]  then
-                        failed[poolid] = {}
-                    end
-                    connectFailed(failed[poolid], host.id, host.host, host.port, poolid)
+
+                    connect_failed(failed_hosts, host.id, host.host, host.port, poolid)
                 end
             elseif num_hosts > 0 then
                 -- Load balance between available hosts using specified method
@@ -337,7 +357,8 @@ function _M.connect(self, sock)
             end
 
             if connected then
-                return sock, {host = host, poolid = poolid, pool = pool}
+                pool.id = poolid
+                return sock, {host = host, pool = pool}
             end
             -- Failed to connect, try next pool
         end

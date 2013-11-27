@@ -53,7 +53,7 @@ __DATA__
                 ngx.say(err)
             else
                 sock:close()
-                ngx.say(err.poolid)
+                ngx.say(err.pool.id)
             end
         ';
     }
