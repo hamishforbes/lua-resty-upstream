@@ -36,7 +36,6 @@ end
 
 
 local function failed_request(self, host, pool)
-
     local upstream = self.upstream
     local ctx = upstream:ctx()
 
@@ -72,7 +71,6 @@ local function check_response(self, res, http_err, host, pool)
         -- Mark host down and return
         failed_request(self, host.id, pool.id)
 
-        return res, http_err
     else
         -- Got a response, check status
         local status_codes = pool.status_codes or default_status_codes
@@ -83,9 +81,11 @@ local function check_response(self, res, http_err, host, pool)
             or status_codes[str_sub(status_code, 1, 1)..'xx']
             or status_codes[str_sub(status_code, 1, 2)..'x']
             then
+
+            res = nil -- Set res to nil so the outer loop re-runs
             http_err = status_code
-            res = nil
             failed_request(self, host.id, pool.id)
+
             ngx_log(ngx_err,
                 str_format('HTTP %s from Host "%s" (%s:%i) in pool "%s"',
                     status_code or "nil",
@@ -96,8 +96,8 @@ local function check_response(self, res, http_err, host, pool)
                 )
             )
         end
-        return res, http_err
     end
+    return res, http_err
 end
 
 
@@ -113,7 +113,7 @@ function _M.request(self, params)
         httpc, conn_info = upstream:connect(httpc)
 
         if not httpc then
-            -- Either failed to connect or http failed to all available hosts
+            -- Either connect or http failed to all available hosts
             if http_err then
                 ngx_log(ngx_err, 'Upstream Error: 502')
                 return nil, {err = http_err, status =  502}
@@ -125,11 +125,10 @@ function _M.request(self, params)
         local host = conn_info.host or {}
         local pool = conn_info.pool or {}
 
-        httpc:set_timeout(pool.read_timeout or defaults.read_timeout) -- read timeout
+        httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
+
         res, http_err = httpc:request(params)
-
         res, http_err = check_response(self, res, http_err, host, pool)
-
     until res
 
     self.conn_info = conn_info

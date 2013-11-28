@@ -229,15 +229,10 @@ local function connect_failed(failed_hosts, id, host, port, poolid)
 end
 
 
-_M.available_methods.round_robin = function(self, live_hosts, total_weight, sock, poolid)
+_M.available_methods.round_robin = function(self, live_hosts, failed_hosts, total_weight, sock, poolid)
     local connected, err
 
-    local failed = self:ctx().failed
-    if not failed[poolid]  then
-        failed[poolid] = {}
-    end
-    local failed_hosts = failed[poolid]
-
+    -- TODO: Maybe use FFI gettimeofday() for better quality randomness
     update_time()
     randomseed(now())
 
@@ -274,7 +269,7 @@ _M.available_methods.round_robin = function(self, live_hosts, total_weight, sock
         if connected then
             return connected, sock, err, host
         else
-            -- Set the bad host to false and drop total_weight by that weight
+            -- Set the bad host to false and reduce total_weight
             live_hosts[idx] = false
             total_weight = total_weight - host.weight
 
@@ -286,6 +281,7 @@ end
 
 
 function _M.connect(self, sock)
+    local ctx = self:ctx()
     local dict = self.dict
     local dict_get = dict.get
 
@@ -295,46 +291,41 @@ function _M.connect(self, sock)
         local ok, err = ngx.timer.at(background_period, background_thread, self)
         if ok then
             dict:set(background_flag, 1)
+        else
+            ngx_log(ngx_err, "Failed to start background thread: "..err)
         end
     end
 
     -- Get pool data
-    local ctx = self:ctx()
-    local failed = ctx.failed
-
     local priority_index = self:get_priority_index()
     local pools = self:get_pools()
 
 
-    if not pools then
+    if not pools or not priority_index then
         return nil, 'Pools broken'
     end
 
-    local priority_count = #priority_index
-    if priority_count == 0 then
-        return nil, 'No pools found'
+    -- A socket (or resty client module) can be passed in, otherwise create a socket
+    if not sock then
+        sock = ngx_socket_tcp()
     end
 
     local available_methods = self.available_methods
+    local failed = ctx.failed
 
     -- upvalue these to return errors later
     local connected, err = nil, nil
 
-    -- A socket (or resty client module...) can be passed in, otherwise create a socket
-    if not sock then
-        sock = ngx_socket_tcp()
-    end
      -- resty modules use set_timeout instead
     local set_timeout = sock.settimeout or sock.set_timeout
 
     -- Loop over pools in priority order
-    for i=1, priority_count do
-        local poolid = priority_index[i]
+    for k,poolid in ipairs(priority_index) do
         local pool = pools[poolid]
 
         if pool.up then
             local failed_hosts = failed[poolid]
-            if not failed_hosts  then
+            if not failed_hosts then
                 failed[poolid] = {}
                 failed_hosts = failed[poolid]
             end
@@ -350,13 +341,12 @@ function _M.connect(self, sock)
                 host = live_hosts[1]
                 connected, err = sock:connect(host.host, host.port)
                 if not connected then
-
                     connect_failed(failed_hosts, host.id, host.host, host.port, poolid)
                 end
             elseif num_hosts > 0 then
                 -- Load balance between available hosts using specified method
                 local method_func = available_methods[pool.method]
-                connected, sock, err, host = method_func(self, live_hosts, total_weight, sock, poolid)
+                connected, sock, err, host = method_func(self, live_hosts, failed_hosts, total_weight, sock, poolid)
             end
 
             if connected then
@@ -364,8 +354,7 @@ function _M.connect(self, sock)
                 return sock, {host = host, pool = pool}
             end
             -- Failed to connect, try next pool
-        end
-        -- Pool was dead, next
+        end -- Pool was dead, next
     end
     -- Didnt find any pools with working hosts, return the last error message
     return nil, err
