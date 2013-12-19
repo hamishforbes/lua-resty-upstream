@@ -8,16 +8,41 @@ local tbl_insert = table.insert
 local tbl_sort = table.sort
 local randomseed = math.randomseed
 local random = math.random
+local now = ngx.now
 local pairs = pairs
 local ipairs = ipairs
 local tostring = tostring
-local now = ngx.now
-local update_time = ngx.update_time
+local getfenv = getfenv
+local pcall = pcall
 local shared = ngx.shared
 local phase = ngx.get_phase
 local cjson = require('cjson')
 local json_encode = cjson.encode
 local json_decode = cjson.decode
+
+
+local ffi = require('ffi')
+-- Don't error if this has been defined somewhere else before, just reuse it
+local ok, timeval = pcall(ffi.typeof, "timeval")
+if not ok then
+    ffi.cdef[[
+      typedef long time_t;
+
+      typedef struct timeval {
+        time_t tv_sec;
+        time_t tv_usec;
+      } timeval;
+
+      int gettimeofday(struct timeval* t, void* tzp);
+    ]]
+    timeval = ffi.typeof("timeval")
+end
+
+local gettimeofday_struct = timeval()
+local function gettimeofday()
+   ffi.C.gettimeofday(gettimeofday_struct, nil)
+   return tonumber(gettimeofday_struct.tv_sec) * 1000000 + tonumber(gettimeofday_struct.tv_usec)
+end
 
 
 local _M = {
@@ -63,17 +88,21 @@ function _M.new(_, dict_name)
     local self = {
         dict = dict
     }
+    -- do this here instead of in the fast path
+    self.id = tostring(self)
     return setmetatable(self, mt), configured
 end
 
 
 -- A safe place in ngx.ctx for the current module instance (self).
 function _M.ctx(self)
-    if phase() == 'init' then
+    -- Straight up stolen from lua-resty-core
+    -- No request available so must be the init phase, return an empty table
+    if not getfenv(0).__ngx_req then
         return {}
     end
     local ngx_ctx = ngx.ctx
-    local id = tostring(self)
+    local id = self.id
     local ctx = ngx_ctx[id]
     if ctx == nil then
         ctx = {
@@ -96,7 +125,6 @@ end
 
 
 function _M.get_priority_index(self)
-
     local ctx = self:ctx()
     if ctx.priority_index == nil then
         local priority_str = self.dict:get(priority_key)
@@ -232,9 +260,7 @@ end
 _M.available_methods.round_robin = function(self, live_hosts, failed_hosts, total_weight, sock, poolid)
     local connected, err
 
-    -- TODO: Maybe use FFI gettimeofday() for better quality randomness
-    update_time()
-    randomseed(now())
+    randomseed(gettimeofday())
 
     local num_hosts = #live_hosts
     -- Loop until we run out of hosts or have connected
@@ -283,10 +309,9 @@ end
 function _M.connect(self, sock)
     local ctx = self:ctx()
     local dict = self.dict
-    local dict_get = dict.get
 
     -- Launch the background process if not running
-    local background_running = dict_get(dict, background_flag)
+    local background_running = dict:get(background_flag)
     if not background_running then
         local ok, err = ngx.timer.at(background_period, background_thread, self)
         if ok then
