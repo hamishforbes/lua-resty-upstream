@@ -150,7 +150,7 @@ response
 GET /a
 --- error_code: 504
 
-=== TEST 3: Connection but bad HTTP response returns 502
+=== TEST 4: Connection but bad HTTP response returns 502
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
@@ -190,7 +190,7 @@ GET /a
 GET /a
 --- error_code: 502
 
-=== TEST 4: Read timeout can be set
+=== TEST 5: Read timeout can be set
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
@@ -228,7 +228,7 @@ GET /a
 GET /a
 --- error_code: 200
 
-=== TEST 4: Pool keepalive overrides set_keepalive call
+=== TEST 6: Pool keepalive overrides set_keepalive call
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config

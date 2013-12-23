@@ -39,21 +39,6 @@ local function failed_request(self, host, pool)
     local upstream = self.upstream
     local ctx = upstream:ctx()
 
-    local ctx_pools = ctx.pools
-    if not ctx_pools then
-        return nil
-    end
-
-    local ctx_pool = ctx_pools[pool]
-    if not ctx_pool then
-        return nil
-    end
-
-    local ctx_host = ctx_pool.hosts[host]
-    if not ctx_host then
-        return nil
-    end
-
     local failed_pool = ctx.failed[pool]
     if not failed_pool then
         ctx.failed[pool] = {}

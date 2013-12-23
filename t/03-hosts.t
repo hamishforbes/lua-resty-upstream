@@ -73,7 +73,8 @@ OK
 
             pools = upstream:get_pools()
 
-            if pools.primary.hosts.a.up then
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            if pools.primary.hosts[idx].up then
                 ngx.status = 500
                 ngx.say("FAIL")
             else
@@ -104,7 +105,8 @@ OK
 
             pools = upstream:get_pools()
 
-            if pools.primary.hosts.a.up then
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            if pools.primary.hosts[idx].up then
                 ngx.say("FAIL")
                 ngx.status = 500
             else
@@ -129,8 +131,9 @@ OK
             upstream:_background_func()
 
             local pools, err = upstream:get_pools()
-
-            if pools.primary.hosts.a.up ~= false or pools.primary.hosts.a.manual == nil then
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.up  ~= false or host.manual == nil then
                 ngx.status = 500
             end
         ';

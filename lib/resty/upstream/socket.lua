@@ -90,6 +90,7 @@ function _M.new(_, dict_name)
     }
     -- do this here instead of in the fast path
     self.id = tostring(self)
+    randomseed(gettimeofday())
     return setmetatable(self, mt), configured
 end
 
@@ -162,29 +163,54 @@ function _M.sort_pools(self, pools)
 end
 
 
+local init_background_thread = function(self)
+    -- Launch the background process if not running
+    local dict = self.dict
+    local background_running = dict:get(background_flag)
+    if not background_running then
+        local ok, err = ngx.timer.at(background_period, background_thread, self)
+        if ok then
+            dict:set(background_flag, 1)
+        else
+            ngx_log(ngx_err, "Failed to start background thread: "..err)
+        end
+    end
+end
+
+function _M.get_host_idx(id, hosts)
+    for i, host in ipairs(hosts) do
+        if host.id == id then
+            return i
+        end
+    end
+    return nil
+end
+
 function _M.post_process(self)
     local ctx = self:ctx()
     local pools = ctx.pools
     local failed = ctx.failed
     local now = now()
+    local get_host_idx = self.get_host_idx
 
+    init_background_thread(self)
 
     for poolid,hosts in pairs(failed) do
-        for hostid,_ in pairs(hosts) do
-            local pool = pools[poolid]
-            local failed_timeout = pool.failed_timeout
-            local max_fails = pool.max_fails
-            local host = pool.hosts[hostid]
+        local pool = pools[poolid]
+        local failed_timeout = pool.failed_timeout
+        local max_fails = pool.max_fails
+        local pool_hosts = pool.hosts
+
+        for id,_ in pairs(hosts) do
+            local host_idx = get_host_idx(id, pool_hosts)
+            local host = pool_hosts[host_idx]
 
             host.lastfail = now
             host.failcount = host.failcount + 1
             if host.failcount >= max_fails then
                 host.up = false
                 ngx_log(ngx_err,
-                    str_format('Host "%s" in Pool "%s" is down',
-                        host.id,
-                        poolid
-                    )
+                    str_format('Host "%s" in Pool "%s" is down', host.id, poolid)
                 )
             end
         end
@@ -202,7 +228,7 @@ function _M._background_func(self)
     for poolid,pool in pairs(pools) do
         local failed_timeout = pool.failed_timeout
         local max_fails = pool.max_fails
-        for hostid, host in pairs(pool.hosts) do
+        for k, host in ipairs(pool.hosts) do
             -- Reset any hosts past their timeout
              if host.lastfail ~= 0 and (host.lastfail + failed_timeout) < now then
                 ngx_log(ngx_info,
@@ -229,11 +255,10 @@ local function get_live_hosts(all_hosts, failed_hosts)
 
     -- Get live hosts in the pool
     local num_hosts = 0
-    for hostid, host in pairs(all_hosts) do
+    for _, host in ipairs(all_hosts) do
         -- Disregard dead hosts
-        if host.up and not failed_hosts[hostid] then
+        if host.up and not failed_hosts[host.id] then
             num_hosts = num_hosts+1
-            host.id = hostid
             live_hosts[num_hosts] = host
             total_weight = total_weight + host.weight
         end
@@ -259,8 +284,6 @@ end
 
 _M.available_methods.round_robin = function(self, live_hosts, failed_hosts, total_weight, sock, poolid)
     local connected, err
-
-    randomseed(gettimeofday())
 
     local num_hosts = #live_hosts
     -- Loop until we run out of hosts or have connected
@@ -293,7 +316,7 @@ _M.available_methods.round_robin = function(self, live_hosts, failed_hosts, tota
         connected, err = sock:connect(host_host, host_port)
 
         if connected then
-            return connected, sock, err, host
+            return connected, sock, host, err
         else
             -- Set the bad host to false and reduce total_weight
             live_hosts[idx] = false
@@ -302,30 +325,16 @@ _M.available_methods.round_robin = function(self, live_hosts, failed_hosts, tota
             connect_failed(failed_hosts, host.id, host_host, host_port, poolid)
         end
     until connected
-    return nil, sock, err, {}
+    return nil, sock, {}, err
 end
 
 
 function _M.connect(self, sock)
     local ctx = self:ctx()
-    local dict = self.dict
-
-    -- Launch the background process if not running
-    local background_running = dict:get(background_flag)
-    if not background_running then
-        local ok, err = ngx.timer.at(background_period, background_thread, self)
-        if ok then
-            dict:set(background_flag, 1)
-        else
-            ngx_log(ngx_err, "Failed to start background thread: "..err)
-        end
-    end
 
     -- Get pool data
     local priority_index = self:get_priority_index()
     local pools = self:get_pools()
-
-
     if not pools or not priority_index then
         return nil, 'Pools broken'
     end
@@ -341,11 +350,11 @@ function _M.connect(self, sock)
     -- upvalue these to return errors later
     local connected, err = nil, nil
 
-     -- resty modules use set_timeout instead
+    -- resty modules use set_timeout instead
     local set_timeout = sock.settimeout or sock.set_timeout
 
     -- Loop over pools in priority order
-    for k,poolid in ipairs(priority_index) do
+    for _, poolid in ipairs(priority_index) do
         local pool = pools[poolid]
 
         if pool.up then
@@ -371,7 +380,7 @@ function _M.connect(self, sock)
             elseif num_hosts > 0 then
                 -- Load balance between available hosts using specified method
                 local method_func = available_methods[pool.method]
-                connected, sock, err, host = method_func(self, live_hosts, failed_hosts, total_weight, sock, poolid)
+                connected, sock, host, err = method_func(self, live_hosts, failed_hosts, total_weight, sock, poolid)
             end
 
             if connected then

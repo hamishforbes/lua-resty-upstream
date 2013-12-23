@@ -167,7 +167,7 @@ function _M.set_priority(self, poolid, priority)
 end
 
 
-function _M.set_weight(self, poolid, host, weight)
+function _M.set_weight(self, poolid, hostid, weight)
     if type(weight) ~= 'number' then
         return nil, 'Weight must be a number'
     end
@@ -182,11 +182,11 @@ function _M.set_weight(self, poolid, host, weight)
         return nil, 'Pool not found'
     end
 
-    local hosts = pool.hosts
-    if hosts[host] == nil then
+    local host_idx = self.upstream.get_host_idx(host, pool.hosts)
+    if not host_idx then
         return nil, 'Host not found'
     end
-    hosts[host].weight = weight
+    pool.hosts[host_idx].weight = weight
 
     return self:save_pools(pools)
 end
@@ -201,12 +201,15 @@ function _M.add_host(self, poolid, host)
 
     -- Validate host definition and set defaults
     local hostid = host['id']
-    if not hostid or pool.hosts[hostid] ~= nil then
-        local hostcount = 0
-        for _,_ in pairs(pool.hosts) do
-            hostcount = hostcount +1
+    if not hostid then
+        hostid = #pool.hosts+1
+    else
+        for _, h in pairs(pool.hosts) do
+            if h.id == hostid then
+                hostid = #pool.hosts+1
+                break
+            end
         end
-        hostid = hostcount+1
     end
 
     local new_host = {}
@@ -214,8 +217,9 @@ function _M.add_host(self, poolid, host)
         local val = host[key] or default
         new_host[key] = val
     end
+    new_host.id = hostid
 
-    pool.hosts[hostid] = new_host
+    pool.hosts[#pool.hosts+1] = new_host
 
     return self:save_pools(pools)
 end
@@ -234,7 +238,11 @@ function _M.remove_host(self, poolid, host)
         return nil, 'Pool not found'
     end
 
-    pool.hosts[host] = nil
+    local host_idx = self.upstream.get_host_idx(host, pool.hosts)
+    if not host_idx then
+        return nil, 'Host not found'
+    end
+    pool.hosts[host_idx] = nil
 
     return self:save_pools(pools)
 end
@@ -252,10 +260,11 @@ function _M.down_host(self, poolid, host)
     if not pool then
         return nil, 'Pool '.. poolid ..' not found'
     end
-    local host = pool.hosts[host]
-    if not host then
+    local host_idx = self.upstream.get_host_idx(host, pool.hosts)
+    if not host_idx then
         return nil, 'Host not found'
     end
+    local host = pool.hosts[host_idx]
 
     host.up = false
     host.manual = true
@@ -282,10 +291,11 @@ function _M.up_host(self, poolid, host)
     if not pool then
         return nil, 'Pool not found'
     end
-    local host = pool.hosts[host]
-    if not host then
+    local host_idx = self.upstream.get_host_idx(host, pool.hosts)
+    if not host_idx then
         return nil, 'Host not found'
     end
+    local host = pool.hosts[host_idx]
 
     host.up = true
     host.manual = nil

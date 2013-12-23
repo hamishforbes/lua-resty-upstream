@@ -183,7 +183,8 @@ GET /
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
 
             local pools, err = upstream:get_pools()
-            if pools.primary.hosts.a == nil then
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            if idx == nil then
                 ngx.status = 500
                 ngx.say(err)
             end
@@ -206,7 +207,7 @@ GET /
             local pools, err = upstream:get_pools()
             local ids = {}
             for k,v in pairs(pools.primary.hosts) do
-                table.insert(ids, tostring(k))
+                table.insert(ids, tostring(v.id))
             end
             table.sort(ids)
             for k,v in ipairs(ids) do
@@ -231,7 +232,9 @@ foo
             test_api:down_host("primary", "a")
 
             local pools, err = upstream:get_pools()
-            if pools.primary.hosts.a.up ~= false or pools.primary.hosts.a.manual == nil then
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.up ~= false or host.manual == nil then
                 ngx.status = 500
             end
         ';
@@ -251,7 +254,9 @@ GET /
             test_api:up_host("primary", "a")
 
             local pools, err = upstream:get_pools()
-            if pools.primary.hosts.a.up ~= true or pools.primary.hosts.a.manual ~= nil then
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.up ~= true or host.manual ~= nil then
                 ngx.status = 500
                 ngx.say(err)
             end
@@ -271,7 +276,8 @@ GET /
             test_api:remove_host("primary", "a")
 
             local pools, err = upstream:get_pools()
-            if pools.primary.hosts.a ~= nil then
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            if idx ~= nil then
                 ngx.status = 500
                 ngx.say(err)
             end
@@ -290,7 +296,9 @@ GET /
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
 
             local pools, err = test_api:get_pools()
-            if pools.primary.hosts.a == nil then
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host == nil then
                 ngx.status = 500
                 ngx.say(err)
             end
@@ -328,7 +336,9 @@ GET /a
             local ok, err = test_api:set_weight("primary", "a", 5)
             if ok then
                 local pools = test_api:get_pools()
-                if pools.primary.hosts.a.weight ~= 5 then
+                local idx = upstream.get_host_idx("a", pools.primary.hosts)
+                local host = pools.primary.hosts[idx]
+                if host.weight ~= 5 then
                     ngx.status = 500
                     ngx.log(ngx.ERR, "Weight set to ".. (pools.primary.hosts.a.weight or "nil"))
                 else
