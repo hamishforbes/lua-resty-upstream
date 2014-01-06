@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (12);
+plan tests => repeat_each() * (16);
 
 my $pwd = cwd();
 
@@ -100,10 +100,10 @@ OK
 
             local dict = ngx.shared["test_upstream"]
 
-            local pool_str = dict:get("pools")
+            local pool_str = dict:get(upstream.pools_key)
             local pools = cjson.decode(pool_str)
 
-            local priority_str = dict:get("priority_index")
+            local priority_str = dict:get(upstream.priority_key)
             local priority_index = cjson.decode(priority_str)
 
             local fail = true
@@ -141,7 +141,7 @@ OK
         content_by_lua '
             local dict = ngx.shared["test_upstream"]
 
-            local priority_str = dict:get("priority_index")
+            local priority_str = dict:get(upstream.priority_key)
             local priority_index = cjson.decode(priority_str)
 
             for k,v in ipairs(priority_index) do
@@ -155,6 +155,59 @@ GET /a
 primary
 secondary
 tertiary
+--- no_error_log
+[error]
+[warn]
+
+=== TEST 4: Multiple upstream instances in the same dictionary
+--- http_config eval: $::HttpConfig
+--- config
+    location = /a {
+        content_by_lua '
+            local upstream2, configured = upstream_socket:new("test_upstream")
+            local pools = {
+                primary = {
+                    up = true,
+                    method = "round_robin",
+                    timeout = 100,
+                    priority = 0,
+                    hosts = {
+                        web01 = { host = "127.0.0.1", weight = 10, port = "80", lastfail = 0, failcount = 0, up = true },
+                        web02 = { host = "127.0.0.1", weight = 10, port = "80", lastfail = 0, failcount = 0, up = true }
+                    }
+                },
+                alternate = {
+                    up = true,
+                    method = "round_robin",
+                    timeout = 100,
+                    priority = 0,
+                    hosts = {
+                        web01 = { host = "127.0.0.1", weight = 10, port = "80", lastfail = 0, failcount = 0, up = true },
+                        web02 = { host = "127.0.0.1", weight = 10, port = "80", lastfail = 0, failcount = 0, up = true }
+                    }
+                }
+            }
+            upstream2:save_pools(pools)
+
+            local original = upstream:get_pools()
+            local alt = upstream2:get_pools()
+
+            for k,v in pairs(original) do
+                ngx.say(k)
+            end
+            for k,v in pairs(alt) do
+                ngx.say(k)
+            end
+        ';
+    }
+--- request
+GET /a
+--- response_body
+tertiary
+primary
+secondary
+primary
+alternate
 --- no_error_log
 [error]
 [warn]

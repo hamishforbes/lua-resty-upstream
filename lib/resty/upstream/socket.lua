@@ -13,36 +13,11 @@ local pairs = pairs
 local ipairs = ipairs
 local tostring = tostring
 local getfenv = getfenv
-local pcall = pcall
 local shared = ngx.shared
 local phase = ngx.get_phase
 local cjson = require('cjson')
 local json_encode = cjson.encode
 local json_decode = cjson.decode
-
-
-local ffi = require('ffi')
--- Don't error if this has been defined somewhere else before, just reuse it
-local ok, timeval = pcall(ffi.typeof, "timeval")
-if not ok then
-    ffi.cdef[[
-      typedef long time_t;
-
-      typedef struct timeval {
-        time_t tv_sec;
-        time_t tv_usec;
-      } timeval;
-
-      int gettimeofday(struct timeval* t, void* tzp);
-    ]]
-    timeval = ffi.typeof("timeval")
-end
-
-local gettimeofday_struct = timeval()
-local function gettimeofday()
-   ffi.C.gettimeofday(gettimeofday_struct, nil)
-   return tonumber(gettimeofday_struct.tv_sec) * 1000000 + tonumber(gettimeofday_struct.tv_usec)
-end
 
 
 local _M = {
@@ -52,9 +27,6 @@ local _M = {
 
 local mt = { __index = _M }
 
-local pools_key = 'pools'
-local priority_key = 'priority_index'
-local background_flag = 'background_running'
 local background_period = 60
 
 local background_thread
@@ -79,18 +51,22 @@ function _M.new(_, dict_name)
         return nil
     end
 
-    local configured = true
-    if phase() == 'init' and dict:get(pools_key) == nil then
-        dict:set(pools_key, json_encode({}))
-        configured = false
-    end
-
     local self = {
         dict = dict
     }
-    -- do this here instead of in the fast path
+    -- Create unique dictionary keys for this instance of upstream
     self.id = tostring(self)
-    randomseed(gettimeofday())
+    self.pools_key = self.id..'_pools'
+    self.priority_key = self.id..'_priority_index'
+    self.background_flag = self.id..'_background_running'
+
+    local configured = true
+    if phase() == 'init' and dict:get(self.pools_key) == nil then
+        dict:set(self.pools_key, json_encode({}))
+        configured = false
+    end
+
+    randomseed(now())
     return setmetatable(self, mt), configured
 end
 
@@ -118,7 +94,7 @@ end
 function _M.get_pools(self)
     local ctx = self:ctx()
     if ctx.pools == nil then
-        local pool_str = self.dict:get(pools_key)
+        local pool_str = self.dict:get(self.pools_key)
         ctx.pools = json_decode(pool_str)
     end
     return ctx.pools
@@ -128,7 +104,7 @@ end
 function _M.get_priority_index(self)
     local ctx = self:ctx()
     if ctx.priority_index == nil then
-        local priority_str = self.dict:get(priority_key)
+        local priority_str = self.dict:get(self.priority_key)
         ctx.priority_index = json_decode(priority_str)
     end
     return ctx.priority_index
@@ -139,7 +115,7 @@ function _M.save_pools(self, pools)
     self:ctx().pools = pools
 
     local serialised = json_encode(pools)
-    return self.dict:set(pools_key, serialised)
+    return self.dict:set(self.pools_key, serialised)
 end
 
 
@@ -159,13 +135,14 @@ function _M.sort_pools(self, pools)
     end
 
     local serialised = json_encode(sorted_pools)
-    return self.dict:set(priority_key, serialised)
+    return self.dict:set(self.priority_key, serialised)
 end
 
 
 local init_background_thread = function(self)
     -- Launch the background process if not running
     local dict = self.dict
+    local background_flag = self.background_flag
     local background_running = dict:get(background_flag)
     if not background_running then
         local ok, err = ngx.timer.at(background_period, background_thread, self)
@@ -268,14 +245,15 @@ local function get_live_hosts(all_hosts, failed_hosts)
 end
 
 
-local function connect_failed(failed_hosts, id, host, port, poolid)
+local function connect_failed(failed_hosts, host, poolid)
     -- Flag host as failed
-    failed_hosts[id] = true
+    local hostid = host.id
+    failed_hosts[hostid] = true
     ngx_log(ngx_err,
         str_format('Failed connecting to Host "%s" (%s:%d) from pool "%s"',
-            id,
-            host,
-            port,
+            hostid,
+            host.host,
+            host.port,
             poolid
         )
     )
@@ -312,8 +290,7 @@ _M.available_methods.round_robin = function(self, live_hosts, failed_hosts, tota
         end
 
         -- Try connecting to the winner
-        local host_host, host_port = host.host, host.port
-        connected, err = sock:connect(host_host, host_port)
+        connected, err = sock:connect(host.host, host.port)
 
         if connected then
             return connected, sock, host, err
@@ -322,7 +299,7 @@ _M.available_methods.round_robin = function(self, live_hosts, failed_hosts, tota
             live_hosts[idx] = false
             total_weight = total_weight - host.weight
 
-            connect_failed(failed_hosts, host.id, host_host, host_port, poolid)
+            connect_failed(failed_hosts, host, poolid)
         end
     until connected
     return nil, sock, {}, err
@@ -375,7 +352,7 @@ function _M.connect(self, sock)
                 host = live_hosts[1]
                 connected, err = sock:connect(host.host, host.port)
                 if not connected then
-                    connect_failed(failed_hosts, host.id, host.host, host.port, poolid)
+                    connect_failed(failed_hosts, host, poolid)
                 end
             elseif num_hosts > 0 then
                 -- Load balance between available hosts using specified method
