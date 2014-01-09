@@ -33,7 +33,7 @@ local background_thread
 background_thread = function(premature, self)
     if premature then
         -- worker is reloading, remove the flag
-        self.dict:delete(background_flag)
+        self.dict:delete(self.background_flag)
         return
     end
 
