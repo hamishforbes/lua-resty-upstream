@@ -164,7 +164,7 @@ tertiary
 --- config
     location = /a {
         content_by_lua '
-            local upstream2, configured = upstream_socket:new("test_upstream")
+            local upstream2, configured = upstream_socket:new("test_upstream", "upstream2")
             local pools = {
                 primary = {
                     up = true,

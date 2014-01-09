@@ -53,12 +53,12 @@ It allows for failover based on HTTP status codes as well as socket connection s
 
 
 ```lua
-lua_shared_dict my_upstream 1m;
+lua_shared_dict my_upstream_dict 1m;
 init_by_lua '
     upstream_socket  = require("resty.upstream.socket")
     upstream_api = require("resty.upstream.api")
 
-    upstream, configured = socket_upstream:new("my_upstream")
+    upstream, configured = socket_upstream:new("my_upstream_dict")
     api = upstream_api:new(upstream)
 
     if not configured then -- Only reconfigure on start, shared mem persists across a HUP
@@ -95,10 +95,11 @@ server {
 # upstream.socket
 
 ### new
-`syntax: upstream, configured = upstream_socket:new(dictionary)`
+`syntax: upstream, configured = upstream_socket:new(dictionary, id?)`
 
 Returns a new upstream object using the provided dictionary name.
 When called in init_by_lua returns an additional variable if the dictionary already contains configuration.
+Takes an optional id parameter, this *must* be unique if multiple instances of upstream.socket are using the same dictionary.
 
 ### connect
 `syntax: ok, err = upstream:connect(client?)`

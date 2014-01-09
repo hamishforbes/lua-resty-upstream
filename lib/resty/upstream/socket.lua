@@ -44,18 +44,20 @@ background_thread = function(premature, self)
 end
 
 
-function _M.new(_, dict_name)
+function _M.new(_, dict_name, id)
     local dict = shared[dict_name]
     if not dict then
         ngx_log(ngx_err, "Shared dictionary not found" )
         return nil
     end
 
+    if not id or type(id) ~= 'string' then id = '' end
+
     local self = {
+        id = id,
         dict = dict
     }
     -- Create unique dictionary keys for this instance of upstream
-    self.id = tostring(self)
     self.pools_key = self.id..'_pools'
     self.priority_key = self.id..'_priority_index'
     self.background_flag = self.id..'_background_running'
