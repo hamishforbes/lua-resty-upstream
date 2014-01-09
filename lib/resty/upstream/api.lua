@@ -3,7 +3,6 @@ local ngx_debug = ngx.DEBUG
 local ngx_err = ngx.ERR
 local ngx_info = ngx.INFO
 local str_format = string.format
-local tbl_len = table.getn
 
 local _M = {
     _VERSION = '0.01',
@@ -86,7 +85,7 @@ function _M.set_method(self, poolid, method)
         return nil, 'Pool not found'
     end
     pools[poolid].method = method
-
+    ngx_log(ngx_debug, str_format('%s method set to %s', poolid, method))
     return self:save_pools(pools)
 end
 
@@ -142,7 +141,7 @@ function _M.create_pool(self, opts)
     if not ok then
         return ok, err
     end
-    ngx.log(ngx.DEBUG, 'Created pool '..poolid)
+    ngx_log(ngx_debug, 'Created pool '..poolid)
     return self:sort_pools(pools)
 end
 
@@ -163,13 +162,14 @@ function _M.set_priority(self, poolid, priority)
     if not ok then
         return ok, err
     end
+    ngx_log(ngx_debug, str_format('%s priority set to %d', poolid, priority))
     return self:sort_pools(pools)
 end
 
 
 function _M.set_weight(self, poolid, hostid, weight)
-    if type(weight) ~= 'number' then
-        return nil, 'Weight must be a number'
+    if type(weight) ~= 'number' or weight < 0 then
+        return nil, 'Weight must be a positive number'
     end
 
     local pools = self:get_pools()
@@ -188,6 +188,9 @@ function _M.set_weight(self, poolid, hostid, weight)
     end
     pool.hosts[host_idx].weight = weight
 
+    ngx_log(ngx_debug,
+        str_format('Host weight "%s" in "%s" set to %d', hostid, poolid, weight)
+    )
     return self:save_pools(pools)
 end
 
@@ -221,6 +224,7 @@ function _M.add_host(self, poolid, host)
 
     pool.hosts[#pool.hosts+1] = new_host
 
+    ngx_log(ngx_debug, str_format('Host "%s" added to  "%s"', hostid, poolid))
     return self:save_pools(pools)
 end
 
@@ -244,6 +248,7 @@ function _M.remove_host(self, poolid, host)
     end
     pool.hosts[host_idx] = nil
 
+    ngx_log(ngx_debug, str_format('Host "%s" removed from "%s"', host, poolid))
     return self:save_pools(pools)
 end
 
