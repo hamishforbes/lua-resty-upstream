@@ -172,6 +172,7 @@ function _M.post_process(self)
     local now = now()
     local get_host_idx = self.get_host_idx
 
+    -- TODO: Move this to init_worker_by_lua once its released in openresty
     init_background_thread(self)
 
     for poolid,hosts in pairs(failed) do
