@@ -73,6 +73,7 @@ function _M.sort_pools(self, ...)
     return self.upstream:sort_pools(...)
 end
 
+
 function _M.set_method(self, poolid, method)
     local available_methods = self.upstream.available_methods
 

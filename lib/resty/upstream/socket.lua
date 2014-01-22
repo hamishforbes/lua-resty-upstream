@@ -156,6 +156,7 @@ local init_background_thread = function(self)
     end
 end
 
+
 function _M.get_host_idx(id, hosts)
     for i, host in ipairs(hosts) do
         if host.id == id then
@@ -164,6 +165,7 @@ function _M.get_host_idx(id, hosts)
     end
     return nil
 end
+
 
 function _M.post_process(self)
     local ctx = self:ctx()

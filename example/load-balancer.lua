@@ -43,7 +43,7 @@ end
 
 local reader = res.body_reader
 repeat
-    local chunk, err = reader()
+    local chunk, err = reader(65536)
     if err then
       ngx_log(ngx_ERR, "Read Error: "..(err or ""))
       break
