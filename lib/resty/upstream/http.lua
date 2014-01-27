@@ -28,8 +28,7 @@ local defaults = {
 
 function _M.new(_, upstream)
     local self = {
-        upstream = upstream,
-        httpc = http.new()
+        upstream = upstream
     }
     return setmetatable(self, mt)
 end
@@ -48,10 +47,78 @@ local function failed_request(self, host, pool)
 end
 
 
-local function check_response(self, res, http_err, host, pool)
+local http_background_func = function(self)
+    -- Active HTTP checks
+    local upstream = self.upstream
+    local httpc = http.new()
+    local pools = upstream:get_pools()
+
+    for poolid, pool in pairs(pools) do
+        pool.id = poolid
+        for _, host in ipairs(pool.hosts) do
+
+            local ok,err = httpc:connect(host.host, host.port)
+            if not ok then
+
+                failed_request(self, host.id, pool.id)
+
+                if host.up then
+                    -- Only log if it wasn't already down
+                    ngx_log(ngx_err,
+                        str_format("Connection failed for host %s (%s:%i) in pool %s",
+                         host.id, host.host, host.port, poolid)
+                    )
+                end
+            else
+                local res, err = httpc:request({
+                        headers = {
+                            ["User-Agent"] = "Resty Upstream/".. self._VERSION.. " HTTP Check"
+                        }
+                    })
+
+                res, err = self:check_response(res, err, host, pool)
+            end
+        end
+    end
+
+end
+
+
+local http_background_thread
+http_background_thread = function(premature, self)
+    local upstream = self.upstream
+    if premature then
+        -- worker is reloading, remove the flag
+        upstream.dict:delete(upstream.background_flag)
+        return
+    end
+
+    -- HTTP active checks
+    --upstream:post_process()     -- Restore any hosts out of their dead period
+    http_background_func(self)  -- Check live and restored hosts
+    upstream:post_process()     -- Down any failed hosts
+
+    -- Run upstream.socket background thread
+    upstream:_background_func()
+
+    -- Call ourselves on a timer again
+    local ok, err = ngx.timer.at(upstream.background_period, http_background_thread, self)
+end
+
+
+-- Wrapper on upstream.socket's _init_background_thread
+function _M.init_background_thread(self)
+    local upstream = self.upstream
+    upstream._init_background_thread(upstream.dict, upstream.background_flag, http_background_thread, self)
+end
+
+
+function _M.check_response(self, res, http_err, host, pool)
     if not res then
         -- Request failed in some fashion
-        ngx_log(ngx_err, (http_err or "").. " from ".. (host.id or "unknown") )
+        if host.up == true then
+            ngx_log(ngx_err, (http_err or "").. " from ".. (host.id or "unknown") )
+        end
 
         -- Mark host down and return
         failed_request(self, host.id, pool.id)
@@ -71,23 +138,34 @@ local function check_response(self, res, http_err, host, pool)
             http_err = status_code
             failed_request(self, host.id, pool.id)
 
-            ngx_log(ngx_err,
-                str_format('HTTP %s from Host "%s" (%s:%i) in pool "%s"',
-                    status_code or "nil",
-                    host.id     or "nil",
-                    host.host   or "nil",
-                    host.port   or "nil",
-                    pool.id     or "nil"
+            if host.up == true then
+                ngx_log(ngx_err,
+                    str_format('HTTP %s from Host "%s" (%s:%i) in pool "%s"',
+                        status_code or "nil",
+                        host.id     or "nil",
+                        host.host   or "nil",
+                        host.port   or "nil",
+                        pool.id     or "nil"
+                    )
                 )
-            )
+            end
         end
     end
     return res, http_err
 end
 
 
+function _M.httpc(self)
+    local upstream = self.upstream
+    local ctx = upstream:ctx()
+    if not ctx.httpc then
+        ctx.httpc = http.new()
+    end
+    return ctx.httpc
+end
+
 function _M.request(self, params)
-    local httpc = self.httpc
+    local httpc = self:httpc()
     local upstream = self.upstream
     local res_header = ngx.header
     local req = ngx.req
@@ -113,7 +191,7 @@ function _M.request(self, params)
         httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
 
         res, http_err = httpc:request(params)
-        res, http_err = check_response(self, res, http_err, host, pool)
+        res, http_err = self:check_response(res, http_err, host, pool)
     until res
 
     self.conn_info = conn_info
@@ -122,21 +200,22 @@ end
 
 
 function _M.set_keepalive(self)
+
     local pool = self.conn_info.pool
     local keepalive_timeout = pool.keepalive_timeout or defaults.keepalive_timeout
     local keepalive_pool    = pool.keepalive_pool    or defaults.keepalive_pool
 
-    return self.httpc:set_keepalive(keepalive_timeout, keepalive_pool)
+    return self:httpc():set_keepalive(keepalive_timeout, keepalive_pool)
 end
 
 
 function _M.get_reused_times(self, ...)
-    return self.httpc:get_reused_times(...)
+    return self:httpc():get_reused_times(...)
 end
 
 
 function _M.close(self, ...)
-    return self.httpc:close(...)
+    return self:httpc():close(...)
 end
 
 return _M

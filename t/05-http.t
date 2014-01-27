@@ -20,6 +20,7 @@ our $HttpConfig = qq{
 
         upstream, configured = upstream_socket:new("test_upstream")
         test_api = upstream_api:new(upstream)
+        http = upstream_http:new(upstream)
 
         test_api:create_pool({id = "primary", timeout = 100, read_timeout = 1100, keepalive_timeout = 1 })
 
@@ -43,7 +44,6 @@ __DATA__
         content_by_lua '
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
 
-            http = upstream_http:new(upstream)
 
             local res, conn_info = http:request({
                 method = "GET",
@@ -78,8 +78,6 @@ response
         content_by_lua '
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
             test_api:add_host("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-
-            http = upstream_http:new(upstream)
 
             local res, conn_info = http:request({
                 method = "GET",
@@ -126,8 +124,6 @@ response
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
             test_api:add_host("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
 
-            http = upstream_http:new(upstream)
-
             local res, conn_info = http:request({
                 method = "GET",
                 path = "/test",
@@ -158,8 +154,6 @@ GET /a
         content_by_lua '
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
             test_api:add_host("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-
-            http = upstream_http:new(upstream)
 
             local res, conn_info = http:request({
                 method = "GET",
@@ -198,8 +192,6 @@ GET /a
         content_by_lua '
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
 
-            http = upstream_http:new(upstream)
-
             local res, conn_info = http:request({
                 method = "GET",
                 path = "/test",
@@ -235,8 +227,6 @@ GET /a
     location = /a {
         content_by_lua '
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-
-            http = upstream_http:new(upstream)
 
            local res, conn_info = http:request({
                 method = "GET",

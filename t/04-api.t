@@ -234,7 +234,7 @@ foo
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
             local host = pools.primary.hosts[idx]
-            if host.up ~= false or host.manual == nil then
+            if host.up ~= false then
                 ngx.status = 500
             end
         ';
@@ -256,7 +256,7 @@ GET /
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
             local host = pools.primary.hosts[idx]
-            if host.up ~= true or host.manual ~= nil then
+            if host.up ~= true then
                 ngx.status = 500
                 ngx.say(err)
             end

@@ -7,8 +7,6 @@ local ngx_var = ngx.var
 local str_lower = string.lower
 local res_header = ngx.header
 
-local http_upstream = Upstream_HTTP:new(upstream)
-
 local res, conn_info = http_upstream:request{
     method = req.get_method(),
     path = (ngx_var.uri .. ngx_var.is_args .. (ngx_var.args or "")),

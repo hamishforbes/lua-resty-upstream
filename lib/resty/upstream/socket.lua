@@ -22,12 +22,11 @@ local json_decode = cjson.decode
 
 local _M = {
     _VERSION = '0.01',
-    available_methods = {}
+    available_methods = {},
+    background_period = 60
 }
 
 local mt = { __index = _M }
-
-local background_period = 60
 
 local background_thread
 background_thread = function(premature, self)
@@ -40,7 +39,7 @@ background_thread = function(premature, self)
     self:_background_func()
 
     -- Call ourselves on a timer again
-    local ok, err = ngx.timer.at(background_period, background_thread, self)
+    local ok, err = ngx.timer.at(self.background_period, background_thread, self)
 end
 
 
@@ -144,14 +143,18 @@ function _M.sort_pools(self, pools)
 end
 
 
-local init_background_thread = function(self)
+function _M.init_background_thread(self)
+    self._init_background_thread(self.dict, self.background_flag, self.background_thread, self)
+end
+
+
+function _M._init_background_thread(dict, flag, thread, ...)
     -- Launch the background process if not running
-    local dict = self.dict
-    local background_running = dict:get(self.background_flag)
+    local background_running = dict:get(flag)
     if not background_running then
-        local ok, err = ngx.timer.at(0, background_thread, self)
+        local ok, err = ngx.timer.at(0, thread, ...)
         if ok then
-            dict:set(self.background_flag, 1)
+            dict:set(flag, 1)
         else
             ngx_log(ngx_err, "Failed to start background thread: "..err)
         end
@@ -171,13 +174,10 @@ end
 
 function _M.post_process(self)
     local ctx = self:ctx()
-    local pools = ctx.pools
+    local pools = self:get_pools()
     local failed = ctx.failed
     local now = now()
     local get_host_idx = self.get_host_idx
-
-    -- TODO: Move this to init_worker_by_lua once its released in openresty
-    init_background_thread(self)
 
     for poolid,hosts in pairs(failed) do
         local pool = pools[poolid]
@@ -191,7 +191,7 @@ function _M.post_process(self)
 
             host.lastfail = now
             host.failcount = host.failcount + 1
-            if host.failcount >= max_fails then
+            if host.failcount >= max_fails and host.up == true then
                 host.up = false
                 ngx_log(ngx_err,
                     str_format('Host "%s" in Pool "%s" is down', host.id, poolid)

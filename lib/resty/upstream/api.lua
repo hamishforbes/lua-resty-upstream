@@ -273,7 +273,8 @@ function _M.down_host(self, poolid, host)
     local host = pool.hosts[host_idx]
 
     host.up = false
-    host.manual = true
+    host.lastfail = 0
+    host.failcount = 0
     ngx_log(ngx_debug,
         str_format('Host "%s" in Pool "%s" is manually down',
             host.id,
@@ -304,7 +305,8 @@ function _M.up_host(self, poolid, host)
     local host = pool.hosts[host_idx]
 
     host.up = true
-    host.manual = nil
+    host.lastfail = 0
+    host.failcount = 0
     ngx_log(ngx_debug,
         str_format('Host "%s" in Pool "%s" is manually up',
             host.id,
