@@ -51,7 +51,10 @@ function _M.new(_, dict_name, id)
         return nil
     end
 
-    if not id or type(id) ~= 'string' then id = '' end
+    if not id then id = 'default_upstream' end
+    if type(id) ~= 'string' then
+        return nil, 'Upstream ID must be a string'
+    end
 
     local self = {
         id = id,
@@ -63,7 +66,7 @@ function _M.new(_, dict_name, id)
     self.background_flag = self.id..'_background_running'
 
     local configured = true
-    if phase() == 'init' and dict:get(self.pools_key) == nil then
+    if dict:get(self.pools_key) == nil then
         dict:set(self.pools_key, json_encode({}))
         configured = false
     end
@@ -144,12 +147,11 @@ end
 local init_background_thread = function(self)
     -- Launch the background process if not running
     local dict = self.dict
-    local background_flag = self.background_flag
-    local background_running = dict:get(background_flag)
+    local background_running = dict:get(self.background_flag)
     if not background_running then
-        local ok, err = ngx.timer.at(background_period, background_thread, self)
+        local ok, err = ngx.timer.at(0, background_thread, self)
         if ok then
-            dict:set(background_flag, 1)
+            dict:set(self.background_flag, 1)
         else
             ngx_log(ngx_err, "Failed to start background thread: "..err)
         end

@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (16);
+plan tests => repeat_each() * (20);
 
 my $pwd = cwd();
 
@@ -208,6 +208,28 @@ primary
 secondary
 primary
 alternate
+--- no_error_log
+[error]
+[warn]
+
+=== TEST 5: Bad upstream ID is rejected
+--- http_config eval: $::HttpConfig
+--- config
+    location = /a {
+        content_by_lua '
+            local test, configured = upstream_socket:new("test_upstream", {})
+            if test ~= nil then
+                ngx.status = 500
+                ngx.exit(500)
+            else
+                ngx.say("OK")
+            end
+        ';
+    }
+--- request
+GET /a
+--- response_body
+OK
 --- no_error_log
 [error]
 [warn]
