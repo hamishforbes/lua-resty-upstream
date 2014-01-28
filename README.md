@@ -8,6 +8,7 @@ Upstream connection load balancing and failover module
 * [Overview](#overview)
 * [upstream.socket](#upstream.socket)
     * [new](#new)
+    * [init_background_thread](#init_background_thread)
     * [connect](#connect)
     * [post_process](#post_process)
     * [get_pools](#get_pools)
@@ -24,7 +25,9 @@ Upstream connection load balancing and failover module
     * [up_host](#up_host)
 * [upstream.http](#upstream.http)
     * [status_codes](#status_codes)
+    * [healthchecks](#healthchecks)
     * [new](#new-2)
+    * [init_background_thread](#init_background_thread-1)
     * [request](#request)
     * [set_keepalive](#set_keepalive)
     * [get_reused_times](#get_reused_times)
@@ -32,7 +35,9 @@ Upstream connection load balancing and failover module
 
 #Status
 
-Very early, not ready for production
+Experimental, API may change without warning.
+
+Requires ngx_lua > 0.9.5
 
 #Overview
 
@@ -79,6 +84,8 @@ init_by_lua '
     end
 ';
 
+init_worker_by_lua 'upstream:init_background_thread()';
+
 server {
 
     location / {
@@ -100,6 +107,11 @@ server {
 Returns a new upstream object using the provided dictionary name.
 When called in init_by_lua returns an additional variable if the dictionary already contains configuration.
 Takes an optional id parameter, this *must* be unique if multiple instances of upstream.socket are using the same dictionary.
+
+### init_background_thread
+`syntax: ok, err = upstream:init_background_thread()`
+
+Initialises the background thread, should be called in `init_worker_by_lua`
 
 ### connect
 `syntax: ok, err = upstream:connect(client?)`
@@ -150,7 +162,8 @@ e.g.
                 port = "80",
                 lastfail = 0,
                 failcount = 0,
-                up = true
+                up = true,
+                healthcheck = true
             }
             web02 = {
                 host = "127.0.0.1",
@@ -158,7 +171,8 @@ e.g.
                 port = "80",
                 lastfail = 0,
                 failcount = 0,
-                up = true
+                up = true,
+                healthcheck = { path = '/check' }
             }
         }
     },
@@ -191,7 +205,6 @@ Saves a table of pools to the shared dictionary, `pools` must be in the same for
 `syntax: ok, err = upstream:sort_pools(pools)`
 
 Generates a priority order in the shared dictionary based on the table of pools provided
-
 
 
 # upstream.api
@@ -266,11 +279,46 @@ This pool option is an array of status codes that indicate a failed request.
 }
 ```
 
+### healthchecks
+
+Active background healthchecks can be enabled by adding the `healthcheck` parameter to a host.
+
+The default check is a `GET` request for `/`.
+
+The `healthcheck` parameter can also be a table of parameters valid for lua-resty-http's [request](https://github.com/pintsized/lua-resty-http#request) method.
+
+Failure for the background check is according to the same parameters as for a frontend request.
+
+```lua
+-- Custom check parameters
+api:add_host("primary", {
+     host = 123.123.123.123,
+     port = 80,
+     healthcheck = {
+        path = "/check",
+        headers = {
+            ["Host"] = "domain.com",
+            ["Accept-Encoding"] = "gzip"
+        }
+     }
+})
+
+-- Default check parameters
+api:add_host("primary", {host = 123.123.123.123, port = 80, healthcheck = true})
+
+```
+
 ### new
 `syntax: httpc, err = upstream_http:new(upstream)`
 
 Returns a new http upstream object using the provided upstream object.
 
+### init_background_thread
+`syntax: ok, err = upstream_http:init_background_thread()`
+
+Initialises the background thread, should be called in `init_worker_by_lua`.
+
+Do *not* call the `init_background_thread` method in `upstream.socket` if using the `upstream.http` background thread
 
 ### request
 `syntax: res, conn_info = upstream_api:request(params)`
@@ -300,8 +348,10 @@ Passes through to the lua-resty-http `get_reused_times` method.
 Passes through to the lua-resty-http `close` method.
 
 
+
 ## TODO
  * IP based sticky sessions
+ * Slow start - recovered hosts have lower weighting
+ * Active TCP healthchecks
  * HTTP Specific options
-     * Active healthchecks
      * Cookie based sticky sessions

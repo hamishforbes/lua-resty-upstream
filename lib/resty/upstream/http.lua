@@ -205,6 +205,7 @@ function _M.httpc(self)
     return ctx.httpc
 end
 
+
 function _M.request(self, params)
     local httpc = self:httpc()
     local upstream = self.upstream
