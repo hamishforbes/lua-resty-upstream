@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * 9;
+plan tests => repeat_each() * 11;
 
 my $pwd = cwd();
 
@@ -141,3 +141,65 @@ OK
 --- request
 GET /
 --- error_code: 200
+
+=== TEST 5: Manually offline hosts are not reset after a natural fail
+--- http_config eval: $::HttpConfig
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1 })
+
+            local pools = upstream:get_pools()
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+
+            host.failcount = 1
+            host.lastfail = ngx.now() - (pools.primary.failed_timeout+1)
+            upstream:save_pools(pools)
+
+            test_api:down_host("primary", "a")
+            upstream:_background_func()
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.up ~= false then
+                ngx.status = 500
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+
+=== TEST 6: Offline hosts are reset by background function
+--- http_config eval: $::HttpConfig
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1 })
+
+            local pools = upstream:get_pools()
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+
+            host.up = false
+            host.failcount = pools.primary.max_fails +1
+            host.lastfail = ngx.now() - (pools.primary.failed_timeout+1)
+            upstream:save_pools(pools)
+
+            upstream:_background_func()
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+
+            if host.up == false or host.failcount ~= 0 or host.lastfail ~= 0 then
+                ngx.status = 500
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+

@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (16);
+plan tests => repeat_each() * (17);
 
 my $pwd = cwd();
 
@@ -354,4 +354,33 @@ GET /a
     }
 --- request
 GET /a
+--- error_code: 200
+
+=== TEST 13: Optional host params can be set
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = / {
+        content_by_lua '
+            local check_params = {
+                    path = "/check",
+                    headers = {
+                        ["User-Agent"] = "Test-Agent"
+                    }
+                 }
+            test_api:add_host("primary", {
+                 id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1,
+                 healthcheck = check_params
+                })
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.healthcheck ~= check_params then
+                ngx.status = 500
+            end
+        ';
+    }
+--- request
+GET /
 --- error_code: 200

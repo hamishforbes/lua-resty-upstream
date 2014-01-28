@@ -25,6 +25,14 @@ local defaults = {
     keepalive_pool = 128
 }
 
+local check_defaults = {
+    method = "GET",
+    path = "/",
+    headers = {
+        ["User-Agent"] = "Resty Upstream/".. _M._VERSION.. " HTTP Check (lua)"
+    }
+}
+
 
 function _M.new(_, upstream)
     local self = {
@@ -47,7 +55,41 @@ local function failed_request(self, host, pool)
 end
 
 
-local http_background_func = function(self)
+local function http_check_request(self, httpc, params)
+    -- Set params
+    local req_params = {}
+    if type(params) ~= 'table' then
+        req_params = check_defaults
+    else
+        for k,v in pairs(check_defaults) do
+            if not params[k] then
+                req_params[k] = v
+            else
+                req_params[k] = params[k]
+            end
+        end
+    end
+
+    local res, err = httpc:request(req_params)
+
+    -- Read and discard body
+    local reader = res.body_reader
+    repeat
+        local chunk, err = reader(65536)
+        if err then
+          ngx_log(ngx_ERR, "Read Error: "..(err or ""))
+          break
+        end
+    until not chunk
+
+    -- Don't use keepalives in background checks
+    httpc:close()
+
+    return res, err
+end
+
+
+function _M._http_background_func(self)
     -- Active HTTP checks
     local upstream = self.upstream
     local httpc = http.new()
@@ -56,27 +98,27 @@ local http_background_func = function(self)
     for poolid, pool in pairs(pools) do
         pool.id = poolid
         for _, host in ipairs(pool.hosts) do
+            if host.healthcheck ~= nil then
+                -- Set connect timeout
+                httpc:set_timeout(pool.timeout)
 
-            local ok,err = httpc:connect(host.host, host.port)
-            if not ok then
+                local ok,err = httpc:connect(host.host, host.port)
+                if not ok then
+                    failed_request(self, host.id, pool.id)
+                    if host.up then
+                        -- Only log if it wasn't already down
+                        ngx_log(ngx_err,
+                            str_format("Connection failed for host %s (%s:%i) in pool %s",
+                             host.id, host.host, host.port, poolid)
+                        )
+                    end
+                else
+                    -- Set read timeout
+                    httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
 
-                failed_request(self, host.id, pool.id)
-
-                if host.up then
-                    -- Only log if it wasn't already down
-                    ngx_log(ngx_err,
-                        str_format("Connection failed for host %s (%s:%i) in pool %s",
-                         host.id, host.host, host.port, poolid)
-                    )
+                    local res, err = http_check_request(self, httpc, host.healthcheck)
+                    res, err = self:check_response(res, err, host, pool)
                 end
-            else
-                local res, err = httpc:request({
-                        headers = {
-                            ["User-Agent"] = "Resty Upstream/".. self._VERSION.. " HTTP Check"
-                        }
-                    })
-
-                res, err = self:check_response(res, err, host, pool)
             end
         end
     end
@@ -87,16 +129,15 @@ end
 local http_background_thread
 http_background_thread = function(premature, self)
     local upstream = self.upstream
+    upstream.dict:delete(upstream.background_flag)
+
     if premature then
-        -- worker is reloading, remove the flag
-        upstream.dict:delete(upstream.background_flag)
         return
     end
 
     -- HTTP active checks
-    --upstream:post_process()     -- Restore any hosts out of their dead period
-    http_background_func(self)  -- Check live and restored hosts
-    upstream:post_process()     -- Down any failed hosts
+    self:_http_background_func()
+    upstream:post_process() -- Process results from background checks
 
     -- Run upstream.socket background thread
     upstream:_background_func()

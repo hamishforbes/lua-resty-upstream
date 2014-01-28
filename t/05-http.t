@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (9);
+plan tests => repeat_each() * 16;
 
 my $pwd = cwd();
 
@@ -272,3 +272,124 @@ GET /a
 --- response_body
 0
 
+=== TEST 7: Default background check is sent
+--- http_config eval: $::HttpConfig
+--- config
+    location = / {
+        content_by_lua '
+            ngx.log(ngx.ERR, "Background check received")
+        ';
+    }
+    location = /foo {
+        content_by_lua '
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1, healthcheck = true })
+
+            http:_http_background_func()
+        ';
+    }
+--- request
+GET /foo
+--- error_log: Background check received
+
+=== TEST 8: Custom background check params
+--- http_config eval: $::HttpConfig
+--- config
+    location = /check {
+        content_by_lua '
+            local headers = ngx.req.get_headers()
+            ngx.log(ngx.ERR, "Background check received from "..headers["User-Agent"])
+        ';
+    }
+    location = /foo {
+        content_by_lua '
+            test_api:add_host("primary", {
+                 id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1,
+                 healthcheck = {
+                    path = "/check",
+                    headers = {
+                        ["User-Agent"] = "Test-Agent"
+                    }
+                 }
+                })
+
+            http:_http_background_func()
+       ';
+    }
+--- request
+GET /foo
+--- error_log: Background check received from Test-Agent
+
+=== TEST 9: Background check marks timeout host failed
+--- http_config eval: $::HttpConfig
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1, healthcheck = true })
+
+            http:_http_background_func()
+            upstream:post_process()
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.failcount ~= 1 then
+                ngx.status = 500
+            end
+
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+
+=== TEST 10: Background check marks http error host failed
+--- http_config eval: $::HttpConfig
+--- config
+    location = / {
+        return 500;
+    }
+    location = /foo {
+        content_by_lua '
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1, healthcheck = true })
+
+            http:_http_background_func()
+            upstream:post_process()
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.failcount ~= 1 then
+                ngx.status = 500
+            end
+
+        ';
+    }
+--- request
+GET /foo
+--- error_code: 200
+
+=== TEST 10: Succesful request doesn't affect host
+--- http_config eval: $::HttpConfig
+--- config
+    location = / {
+        return 200;
+    }
+    location = /foo {
+        content_by_lua '
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1, healthcheck = true })
+
+            http:_http_background_func()
+            upstream:post_process()
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.failcount ~= 0 then
+                ngx.status = 500
+            end
+
+        ';
+    }
+--- request
+GET /foo
+--- error_code: 200

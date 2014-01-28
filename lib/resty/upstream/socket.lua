@@ -30,9 +30,9 @@ local mt = { __index = _M }
 
 local background_thread
 background_thread = function(premature, self)
+    self.dict:delete(self.background_flag)
+
     if premature then
-        -- worker is reloading, remove the flag
-        self.dict:delete(self.background_flag)
         return
     end
 
@@ -144,7 +144,7 @@ end
 
 
 function _M.init_background_thread(self)
-    self._init_background_thread(self.dict, self.background_flag, self.background_thread, self)
+    self._init_background_thread(self.dict, self.background_flag, background_thread, self)
 end
 
 

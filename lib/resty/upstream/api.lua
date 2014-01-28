@@ -221,6 +221,11 @@ function _M.add_host(self, poolid, host)
         local val = host[key] or default
         new_host[key] = val
     end
+    for key, default in pairs(optional_host) do
+        if host[key] then
+            new_host[key] = host[key]
+        end
+    end
     new_host.id = hostid
 
     pool.hosts[#pool.hosts+1] = new_host
