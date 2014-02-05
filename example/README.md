@@ -14,6 +14,13 @@ We've also pulled in cjson for use in the API later on.
 
 Instances are created for both the API and http upstream modules.
 
+## init_worker_by_lua
+
+We call `init_background_thread()` here to start the background worker.
+
+This worker will restore dead hosts after the defined timeout period and perform background checks on hosts.
+
+
 ## lua-load-balancer
 
 In our main server block, listening on port 80, we pass everything to `load-balancer.lua` in `content_by_lua`.
