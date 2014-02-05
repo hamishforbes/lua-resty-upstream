@@ -12,14 +12,19 @@ The pools have some keepalive and timeout settings configured
 
 We've also pulled in cjson for use in the API later on.
 
+Instances are created for both the API and http upstream modules.
+
 ## lua-load-balancer
 
 In our main server block, listening on port 80, we pass everything to `load-balancer.lua` in `content_by_lua`.
 
-In `load-balancer.lua` we create a new instance of upstream.http, we can now use this as if it was an instance of lua-resty-http.
+In `load-balancer.lua` we can use `http_upstream` as if it was an instance of lua-resty-http.
 The only real difference is the second return value from `request()` is a table.
 
-We then make an http request with all the parameters of the current request.
+We first get the request body iterator and return a 411 error if the client is attempting to send a chunked request.
+This is not yet supported by the ngx_lua `ngx.req.socket` api.
+
+Then we make an http request with all the parameters of the current request.
 If the request errors then the `conn_info` table will contain the error message in `err` and the recommended response status code in `status`.
 This will be `504 Gateway Timeout` if no tcp connection could be made at all, or `502 Bad Gateway` if the upstream host returned a bad status code.
 

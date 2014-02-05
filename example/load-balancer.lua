@@ -7,10 +7,22 @@ local ngx_var = ngx.var
 local str_lower = string.lower
 local res_header = ngx.header
 
+local client_body_reader, err = http_upstream:get_client_body_reader()
+if not client_body_reader then
+    if err == "chunked request bodies not supported yet" then
+        ngx.status = 411
+        ngx.say("411 Length Required")
+        ngx.exit(ngx.status)
+        return
+    elseif err ~= nil then
+        ngx_log(ngx_err, "Error getting client body reader: ", err)
+    end
+end
+
 local res, conn_info = http_upstream:request{
     method = req.get_method(),
     path = (ngx_var.uri .. ngx_var.is_args .. (ngx_var.args or "")),
-    body = req.get_body_data(), -- TODO: stream this into httpc?
+    body = client_body_reader,
     headers = req.get_headers(),
 }
 

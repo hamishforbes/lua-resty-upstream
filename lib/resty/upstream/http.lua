@@ -206,6 +206,11 @@ function _M.httpc(self)
 end
 
 
+function _M.get_client_body_reader(self, ...)
+    return self:httpc():get_client_body_reader(...)
+end
+
+
 function _M.request(self, params)
     local httpc = self:httpc()
     local upstream = self.upstream
