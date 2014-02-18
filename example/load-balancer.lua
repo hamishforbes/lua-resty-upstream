@@ -52,18 +52,20 @@ for k,v in pairs(res.headers) do
 end
 
 local reader = res.body_reader
-repeat
-    local chunk, err = reader(65536)
-    if err then
-      ngx_log(ngx_ERR, "Read Error: "..(err or ""))
-      break
-    end
+if reader then
+    repeat
+        local chunk, err = reader(65536)
+        if err then
+          ngx_log(ngx_ERR, "Read Error: "..(err or ""))
+          break
+        end
 
-    if chunk then
-      print(chunk)
-      flush(true)
-    end
-until not chunk
+        if chunk then
+          print(chunk)
+          flush(true)
+        end
+    until not chunk
+end
 
 local ok,err = http_upstream:set_keepalive()
 

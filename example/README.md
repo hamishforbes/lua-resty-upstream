@@ -38,7 +38,7 @@ This will be `504 Gateway Timeout` if no tcp connection could be made at all, or
 You don't *have* to use these status codes, you can do whatever you like at this point.
 
 If we successfully made a request to one of the hosts then we strip out hop-by-hop headers and add the rest of the upstream response headers to the current request's response headers.
-Then we read the response body from the upstream host in chunks and flush back to the client.
+Then we read the response body, if available, from the upstream host in chunks and flush back to the client.
 
 Lastly we call `set_keepalive()` to let the pool configuration and http response determine whether to close the socket or put it into the connection pool.
 
