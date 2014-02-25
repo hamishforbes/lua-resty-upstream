@@ -73,14 +73,19 @@ local function http_check_request(self, httpc, params)
     local res, err = httpc:request(req_params)
 
     -- Read and discard body
-    local reader = res.body_reader
-    repeat
-        local chunk, err = reader(65536)
-        if err then
-          ngx_log(ngx_ERR, "Read Error: "..(err or ""))
-          break
-        end
-    until not chunk
+    local reader
+    if res then
+        reader = res.body_reader
+    end
+    if reader then
+        repeat
+            local chunk, err = reader(65536)
+            if err then
+              ngx_log(ngx_ERR, "Read Error: "..(err or ""))
+              break
+            end
+        until not chunk
+    end
 
     -- Don't use keepalives in background checks
     httpc:close()
@@ -98,7 +103,7 @@ function _M._http_background_func(self)
     for poolid, pool in pairs(pools) do
         pool.id = poolid
         for _, host in ipairs(pool.hosts) do
-            if host.healthcheck ~= nil then
+            if host.healthcheck ~= nil and host.healthcheck ~= false then
                 -- Set connect timeout
                 httpc:set_timeout(pool.timeout)
 
@@ -122,7 +127,6 @@ function _M._http_background_func(self)
             end
         end
     end
-
 end
 
 
