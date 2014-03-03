@@ -26,6 +26,9 @@ local res, conn_info = http_upstream:request{
     headers = req.get_headers(),
 }
 
+ngx.ctx.host = conn_info.host
+ngx.ctx.pool = conn_info.pool
+
 if not res then
     ngx.status = conn_info.status
     ngx.say(conn_info.err)
