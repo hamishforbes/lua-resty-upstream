@@ -1,3 +1,4 @@
+local ngx_timer_at = ngx.timer.at
 local ngx_log = ngx.log
 local ngx_err = ngx.ERR
 local ngx_debug = ngx.DEBUG
@@ -141,13 +142,14 @@ http_background_thread = function(premature, self)
 
     -- HTTP active checks
     self:_http_background_func()
-    upstream:post_process() -- Process results from background checks
+    -- Run post_process inline rather than after the request is done
+    upstream._post_process(false, upstream, upstream:ctx())
 
     -- Run upstream.socket background thread
     upstream:_background_func()
 
     -- Call ourselves on a timer again
-    local ok, err = ngx.timer.at(upstream.background_period, http_background_thread, self)
+    local ok, err = ngx_timer_at(upstream.background_period, http_background_thread, self)
 end
 
 

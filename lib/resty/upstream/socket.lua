@@ -1,8 +1,9 @@
 local ngx_socket_tcp = ngx.socket.tcp
+local ngx_timer_at = ngx.timer.at
 local ngx_log = ngx.log
-local ngx_debug = ngx.DEBUG
-local ngx_err = ngx.ERR
-local ngx_info = ngx.INFO
+local ngx_DEBUG = ngx.DEBUG
+local ngx_ERR = ngx.ERR
+local ngx_INFO = ngx.INFO
 local str_format = string.format
 local tbl_insert = table.insert
 local tbl_sort = table.sort
@@ -11,14 +12,13 @@ local random = math.random
 local now = ngx.now
 local pairs = pairs
 local ipairs = ipairs
-local tostring = tostring
 local getfenv = getfenv
 local shared = ngx.shared
 local phase = ngx.get_phase
 local cjson = require('cjson')
 local json_encode = cjson.encode
 local json_decode = cjson.decode
-
+local resty_lock = require('resty.lock')
 
 local _M = {
     _VERSION = '0.01',
@@ -39,14 +39,14 @@ background_thread = function(premature, self)
     self:_background_func()
 
     -- Call ourselves on a timer again
-    local ok, err = ngx.timer.at(self.background_period, background_thread, self)
+    local ok, err = ngx_timer_at(self.background_period, background_thread, self)
 end
 
 
 function _M.new(_, dict_name, id)
     local dict = shared[dict_name]
     if not dict then
-        ngx_log(ngx_err, "Shared dictionary not found" )
+        ngx_log(ngx_ERR, "Shared dictionary not found" )
         return nil
     end
 
@@ -57,12 +57,14 @@ function _M.new(_, dict_name, id)
 
     local self = {
         id = id,
-        dict = dict
+        dict = dict,
+        dict_name = dict_name
     }
     -- Create unique dictionary keys for this instance of upstream
     self.pools_key = self.id..'_pools'
     self.priority_key = self.id..'_priority_index'
     self.background_flag = self.id..'_background_running'
+    self.lock_key = self.id..'_lock'
 
     local configured = true
     if dict:get(self.pools_key) == nil then
@@ -104,6 +106,37 @@ function _M.get_pools(self)
     return ctx.pools
 end
 
+local function get_lock_obj(self)
+    local ctx = self:ctx()
+    if not ctx.lock then
+        ctx.lock = resty_lock:new(self.dict_name)
+    end
+    return ctx.lock
+end
+
+function _M.get_locked_pools(self)
+    local lock = get_lock_obj(self)
+    local ok, err = lock:lock(self.lock_key)
+
+    if ok then
+        local pool_str = self.dict:get(self.pools_key)
+        local pools = json_decode(pool_str)
+        return pools
+    else
+        ngx_log(ngx_ERR, str_format("Failed to lock pools for '%s': %s", self.id, err))
+    end
+
+    return ok, err
+end
+
+function _M.unlock_pools(self)
+    local lock = get_lock_obj(self)
+    local ok, err = lock:unlock(self.lock_key)
+    if not ok then
+        ngx_log(ngx_ERR, str_format("Failed to release pools lock for '%s': %s", self.id, err))
+    end
+    return ok, err
+end
 
 function _M.get_priority_index(self)
     local ctx = self:ctx()
@@ -152,13 +185,44 @@ function _M._init_background_thread(dict, flag, thread, ...)
     -- Launch the background process if not running
     local background_running = dict:get(flag)
     if not background_running then
-        local ok, err = ngx.timer.at(0, thread, ...)
+        local ok, err = ngx_timer_at(0, thread, ...)
         if ok then
             dict:set(flag, 1)
         else
-            ngx_log(ngx_err, "Failed to start background thread: "..err)
+            ngx_log(ngx_ERR, "Failed to start background thread: "..err)
         end
     end
+end
+
+
+function _M._background_func(self)
+    local now = now()
+
+    -- Reset state for any failed hosts
+    local pools = self:get_locked_pools()
+
+    for poolid,pool in pairs(pools) do
+        local failed_timeout = pool.failed_timeout
+        local max_fails = pool.max_fails
+        for k, host in ipairs(pool.hosts) do
+            -- Reset any hosts past their timeout
+             if host.lastfail ~= 0 and (host.lastfail + failed_timeout) < now then
+                ngx_log(ngx_INFO,
+                    str_format('Host "%s" in Pool "%s" is up', host.id, poolid)
+                )
+                host.up = true
+                host.failcount = 0
+                host.lastfail = 0
+            end
+        end
+    end
+
+    local ok, err = self:save_pools(pools)
+    if not ok then
+        ngx_log(ngx_ERR, "Error saving pools for upstream ", self.id, ": ", err)
+    end
+    self:unlock_pools()
+    return ok, err
 end
 
 
@@ -172,12 +236,16 @@ function _M.get_host_idx(id, hosts)
 end
 
 
-function _M.post_process(self)
-    local ctx = self:ctx()
-    local pools = self:get_pools()
+function _M._post_process(premature, self, ctx)
+    --local ctx = self:ctx()
     local failed = ctx.failed
     local now = now()
     local get_host_idx = self.get_host_idx
+
+    local pools, err = self:get_locked_pools()
+    if not pools then
+        return
+    end
 
     for poolid,hosts in pairs(failed) do
         local pool = pools[poolid]
@@ -193,41 +261,26 @@ function _M.post_process(self)
             host.failcount = host.failcount + 1
             if host.failcount >= max_fails and host.up == true then
                 host.up = false
-                ngx_log(ngx_err,
+                ngx_log(ngx_ERR,
                     str_format('Host "%s" in Pool "%s" is down', host.id, poolid)
                 )
             end
         end
     end
 
-    return self:save_pools(pools)
-end
-
-
-function _M._background_func(self)
-    local now = now()
-
-    -- Reset state for any failed hosts
-    local pools = self:get_pools()
-    for poolid,pool in pairs(pools) do
-        local failed_timeout = pool.failed_timeout
-        local max_fails = pool.max_fails
-        for k, host in ipairs(pool.hosts) do
-            -- Reset any hosts past their timeout
-             if host.lastfail ~= 0 and (host.lastfail + failed_timeout) < now then
-                ngx_log(ngx_info,
-                    str_format('Host "%s" in Pool "%s" is up', host.id, poolid)
-                )
-                host.up = true
-                host.failcount = 0
-                host.lastfail = 0
-            end
-        end
+    local ok, err = self:save_pools(pools)
+    if not ok then
+        ngx_log(ngx_ERR, "Error saving pools for upstream ", self.id, " ", err)
     end
 
-    return self:save_pools(pools)
+    self:unlock_pools()
+    return ok, err
 end
 
+function _M.post_process(self)
+    -- Run in a background thread immediately after the request is done
+    ngx_timer_at(0, self._post_process, self, self:ctx())
+end
 
 local function get_live_hosts(all_hosts, failed_hosts)
     if all_hosts == nil then
@@ -256,7 +309,7 @@ local function connect_failed(failed_hosts, host, poolid)
     -- Flag host as failed
     local hostid = host.id
     failed_hosts[hostid] = true
-    ngx_log(ngx_err,
+    ngx_log(ngx_ERR,
         str_format('Failed connecting to Host "%s" (%s:%d) from pool "%s"',
             hostid,
             host.host,

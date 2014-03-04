@@ -68,7 +68,8 @@ OK
             -- Simulate 3 connection attempts
             for i=1,3 do
                 upstream:connect()
-                upstream:post_process()
+                -- Run post_process inline rather than after the request is done
+                upstream._post_process(false, upstream, upstream:ctx())
             end
 
             pools = upstream:get_pools()
@@ -100,7 +101,8 @@ OK
             -- Simulate 3 connection attempts
             for i=1,3 do
                 upstream:connect()
-                upstream:post_process()
+                -- Run post_process inline rather than after the request is done
+                upstream._post_process(false, upstream, upstream:ctx())
             end
 
             pools = upstream:get_pools()

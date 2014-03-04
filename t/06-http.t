@@ -327,7 +327,8 @@ GET /foo
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1, healthcheck = true })
 
             http:_http_background_func()
-            upstream:post_process()
+            -- Run post_process inline rather than after the request is done
+            upstream._post_process(false, upstream, upstream:ctx())
 
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
@@ -353,7 +354,8 @@ GET /
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1, healthcheck = true })
 
             http:_http_background_func()
-            upstream:post_process()
+            -- Run post_process inline rather than after the request is done
+            upstream._post_process(false, upstream, upstream:ctx())
 
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
@@ -379,7 +381,8 @@ GET /foo
             test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1, healthcheck = true })
 
             http:_http_background_func()
-            upstream:post_process()
+            -- Run post_process inline rather than after the request is done
+            upstream._post_process(false, upstream, upstream:ctx())
 
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
