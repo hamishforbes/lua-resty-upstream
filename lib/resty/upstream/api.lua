@@ -3,6 +3,7 @@ local ngx_debug = ngx.DEBUG
 local ngx_err = ngx.ERR
 local ngx_info = ngx.INFO
 local str_format = string.format
+local tostring = tostring
 
 local _M = {
     _VERSION = '0.01',
@@ -81,6 +82,11 @@ function _M.set_method(self, poolid, method)
         return nil, 'Method not found'
     end
 
+    if not poolid then
+        return nil, 'No pool ID specified'
+    end
+    poolid = tostring(poolid)
+
     local pools = self:get_pools()
     if not pools[poolid] then
         return nil, 'Pool not found'
@@ -92,7 +98,7 @@ end
 
 
 local function validate_pool(opts, pools, methods)
-    if pools[opts.id] then
+    if pools[tostring(opts.id)] then
         return nil, 'Pool exists'
     end
 
@@ -111,8 +117,9 @@ end
 function _M.create_pool(self, opts)
     local poolid = opts.id
     if not poolid then
-        return nil, 'No ID set'
+        return nil, 'Pools must have an ID'
     end
+    poolid = tostring(poolid)
 
     local pools = self:get_pools()
 
@@ -151,6 +158,10 @@ function _M.set_priority(self, poolid, priority)
     if type(priority) ~= 'number' then
         return nil, 'Priority must be a number'
     end
+    if not poolid then
+        return nil, 'No pool ID specified'
+    end
+    poolid = tostring(poolid)
 
     local pools = self:get_pools()
     if pools[poolid] == nil then
@@ -172,6 +183,11 @@ function _M.set_weight(self, poolid, hostid, weight)
     if type(weight) ~= 'number' or weight < 0 then
         return nil, 'Weight must be a positive number'
     end
+    if not poolid or not hostid then
+        return nil, 'Pool or host id not specified'
+    end
+    poolid = tostring(poolid)
+    hostid = tostring(hostid)
 
     local pools = self:get_pools()
     if not pools then
@@ -183,7 +199,7 @@ function _M.set_weight(self, poolid, hostid, weight)
         return nil, 'Pool not found'
     end
 
-    local host_idx = self.upstream.get_host_idx(host, pool.hosts)
+    local host_idx = self.upstream.get_host_idx(hostid, pool.hosts)
     if not host_idx then
         return nil, 'Host not found'
     end
@@ -197,6 +213,14 @@ end
 
 
 function _M.add_host(self, poolid, host)
+    if not host then
+        return nil, 'No host specified'
+    end
+    if not poolid then
+        return nil, 'No pool ID specified'
+    end
+    poolid = tostring(poolid)
+
     local pools = self:get_pools()
     if pools[poolid] == nil then
         return nil, 'Pool not found'
@@ -208,13 +232,14 @@ function _M.add_host(self, poolid, host)
     if not hostid then
         hostid = #pool.hosts+1
     else
+        hostid = tostring(hostid)
         for _, h in pairs(pool.hosts) do
             if h.id == hostid then
-                hostid = #pool.hosts+1
-                break
+                return nil, 'Host ID already exists'
             end
         end
     end
+    hostid = tostring(hostid)
 
     local new_host = {}
     for key, default in pairs(default_host) do
@@ -235,10 +260,13 @@ function _M.add_host(self, poolid, host)
 end
 
 
-function _M.remove_host(self, poolid, host)
-    if not poolid or not host then
-        return nil, 'Pool or host not specified'
+function _M.remove_host(self, poolid, hostid)
+    if not poolid or not hostid then
+        return nil, 'Pool or host id not specified'
     end
+    poolid = tostring(poolid)
+    hostid = tostring(hostid)
+
     local pools = self:get_pools()
     if not pools then
         return nil, 'No Pools'
@@ -248,21 +276,24 @@ function _M.remove_host(self, poolid, host)
         return nil, 'Pool not found'
     end
 
-    local host_idx = self.upstream.get_host_idx(host, pool.hosts)
+    local host_idx = self.upstream.get_host_idx(hostid, pool.hosts)
     if not host_idx then
         return nil, 'Host not found'
     end
     pool.hosts[host_idx] = nil
 
-    ngx_log(ngx_debug, str_format('Host "%s" removed from "%s"', host, poolid))
+    ngx_log(ngx_debug, str_format('Host "%s" removed from "%s"', hostid, poolid))
     return self:save_pools(pools)
 end
 
 
-function _M.down_host(self, poolid, host)
-    if not poolid or not host then
-        return nil, 'Pool or host not specified'
+function _M.down_host(self, poolid, hostid)
+    if not poolid or not hostid then
+        return nil, 'Pool or host id not specified'
     end
+    poolid = tostring(poolid)
+    hostid = tostring(hostid)
+
     local pools = self:get_pools()
     if not pools then
         return nil, 'No Pools'
@@ -271,7 +302,7 @@ function _M.down_host(self, poolid, host)
     if not pool then
         return nil, 'Pool '.. poolid ..' not found'
     end
-    local host_idx = self.upstream.get_host_idx(host, pool.hosts)
+    local host_idx = self.upstream.get_host_idx(hostid, pool.hosts)
     if not host_idx then
         return nil, 'Host not found'
     end
@@ -291,10 +322,13 @@ function _M.down_host(self, poolid, host)
 end
 
 
-function _M.up_host(self, poolid, host)
-    if not poolid or not host then
-        return nil, 'Pool or host not specified'
+function _M.up_host(self, poolid, hostid)
+    if not poolid or not hostid then
+        return nil, 'Pool or host id not specified'
     end
+    poolid = tostring(poolid)
+    hostid = tostring(hostid)
+
     local pools = self:get_pools()
     if not pools then
         return nil, 'No Pools'
@@ -303,7 +337,7 @@ function _M.up_host(self, poolid, host)
     if not pool then
         return nil, 'Pool not found'
     end
-    local host_idx = self.upstream.get_host_idx(host, pool.hosts)
+    local host_idx = self.upstream.get_host_idx(hostid, pool.hosts)
     if not host_idx then
         return nil, 'Host not found'
     end

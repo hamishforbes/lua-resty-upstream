@@ -229,6 +229,8 @@ Creates a new pool from a table of options, `pool` must contain at least 1 key `
 Other valid options are `method`, `timeout`, `priority`, `read_timeout`, `keepalive_timeout`, `keepalive_pool` and `status_codes`.
 Hosts cannot be defined at this point.
 
+Note: IDs are converted to a string by this function
+
 Default pool values
 ```lua
 { method = 'round_robin', timeout = 2000, priority = 0 }
@@ -244,6 +246,8 @@ Priority must be a number, returns nil on error.
 
 Takes a pool ID and a table of options, `host` must contain at least `host`.
 If the host ID is not specified it will be a numeric index based on the number of hosts in the pool.
+
+Note: IDs are converted to a string by this function
 
 Defaults:
 ```lua

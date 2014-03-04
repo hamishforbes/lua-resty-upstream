@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (17);
+plan tests => repeat_each() * (19);
 
 my $pwd = cwd();
 
@@ -34,147 +34,7 @@ no_long_string();
 run_tests();
 
 __DATA__
-=== TEST 1: Cannot add existing pool
---- http_config eval: $::HttpConfig
---- log_level: debug
---- config
-    location = /a {
-        content_by_lua '
-            local ok,err = test_api:create_pool({id = "primary"})
-            if not ok then
-                ngx.status = 200
-            else
-                ngx.status = 500
-            end
-            ngx.exit(ngx.status)
-        ';
-    }
---- request
-GET /a
---- errorcode: 200
-
-=== TEST 2: Cannot set unavailable load-balancing method
---- http_config eval: $::HttpConfig
---- config
-    location = /a {
-        content_by_lua '
-            local ok, err = test_api:set_method("primary", "foobar")
-            if not ok then
-                ngx.status = 200
-            else
-                ngx.status = 500
-            end
-            ngx.exit(ngx.status)
-        ';
-    }
---- request
-GET /a
---- error_code: 200
-
-=== TEST 2b: Can set available load-balancing method
---- http_config eval: $::HttpConfig
---- config
-    location = /a {
-        content_by_lua '
-            local ok, err = test_api:set_method("primary", "round_robin")
-            if ok then
-                ngx.status = 200
-            else
-                ngx.status = 500
-            end
-            ngx.exit(ngx.status)
-        ';
-    }
---- request
-GET /a
---- error_code: 200
-
-=== TEST 3: Cannot set non-numeric priority
---- http_config eval: $::HttpConfig
---- config
-    location = /a {
-        content_by_lua '
-            local ok, err = test_api:set_priority("primary", "foobar")
-            if not ok then
-                ngx.status = 200
-            else
-                ngx.status = 500
-            end
-            ngx.exit(ngx.status)
-        ';
-    }
---- request
-GET /a
---- error_code: 200
-
-=== TEST 3b: Can set numeric priority
---- http_config eval: $::HttpConfig
---- config
-    location = /a {
-        content_by_lua '
-            local ok, err = test_api:set_priority("primary", 5)
-            if ok then
-                local pools = test_api:get_pools()
-                if pools.primary.priority ~= 5 then
-                    ngx.status = 500
-                else
-                    ngx.status = 200
-                end
-            else
-                ngx.status = 500
-            end
-            ngx.exit(ngx.status)
-        ';
-    }
---- request
-GET /a
---- error_code: 200
-
-=== TEST 4: Cannot create pool with bad values
---- http_config eval: $::HttpConfig
---- config
-    location = /a {
-        content_by_lua '
-            local ok, err = test_api:create_pool({
-                    id = "testpool",
-                    priority = "abcd",
-                    timeout = "foo",
-                    method = "bar",
-                    max_fails = "three",
-                    fail_timeout = "sixty"
-                })
-
-            if not ok then
-                ngx.status = 200
-            else
-                ngx.status = 500
-            end
-            ngx.exit(ngx.status)
-        ';
-    }
---- request
-GET /a
---- error_code: 200
-
-=== TEST 5: Cannot add host to non-existent pool
---- http_config eval: $::HttpConfig
---- config
-    location = / {
-        content_by_lua '
-            local ok, err = test_api:add_host("foobar", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
-            if not ok then
-                ngx.status = 200
-            else
-                ngx.status = 500
-            end
-            ngx.exit(ngx.status)
-        ';
-    }
---- request
-GET /
---- errorcode: 200
-
-=== TEST 6: add_host works
+=== TEST 1: add_host works
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
@@ -194,7 +54,64 @@ GET /
 GET /
 --- error_code: 200
 
-=== TEST 7: Mixed specific and implied host IDs
+=== TEST 1b: Cannot add host with existing id
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+
+            local pools, err = upstream:get_pools()
+            ngx.say(#pools.primary.hosts)
+        ';
+    }
+--- request
+GET /
+--- response_body
+1
+
+=== TEST 1c: add_host with explicit numeric id is converted to string
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { id=123, host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+
+            local pools, err = upstream:get_pools()
+            if not type(pools.primary.hosts[1].id) == "string" then
+                ngx.status = 500
+                ngx.say(err)
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+
+=== TEST 1d: add_host with implicit numeric id is converted to string
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", {host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+
+            local pools, err = upstream:get_pools()
+            if not type(pools.primary.hosts[1].id) == "string" then
+                ngx.status = 500
+                ngx.say(err)
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+
+
+=== TEST 2: Mixed specific and implied host IDs
 --- http_config eval: $::HttpConfig
 --- config
     location = / {
@@ -223,7 +140,7 @@ GET /
 a
 foo
 
-=== TEST 8: down_host marks host down and sets manual flag
+=== TEST 3: down_host marks host down
 --- http_config eval: $::HttpConfig
 --- config
     location = / {
@@ -243,7 +160,48 @@ foo
 GET /
 --- error_code: 200
 
-=== TEST 9: up_host marks host up and clears manual flag
+=== TEST 3b: down_host with numeric arg marks host down
+--- http_config eval: $::HttpConfig
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:down_host("primary", 1)
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("1", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.up ~= false then
+                ngx.status = 500
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+
+
+=== TEST 3c: down_host with string arg marks host down
+--- http_config eval: $::HttpConfig
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:down_host("primary", "1")
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("1", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.up ~= false then
+                ngx.status = 500
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+
+=== TEST 4: up_host marks host up
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
@@ -266,7 +224,54 @@ GET /
 GET /
 --- error_code: 200
 
-=== TEST 10: remove_host deletes host
+=== TEST 4b: up_host with numeric arg marks host up
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:down_host("primary", "1")
+            test_api:up_host("primary", 1)
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("1", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.up ~= true then
+                ngx.status = 500
+                ngx.say(err)
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+
+=== TEST 4b: up_host with string arg marks host up
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:down_host("primary", "1")
+            test_api:up_host("primary", "1")
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("1", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.up ~= true then
+                ngx.status = 500
+                ngx.say(err)
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+
+
+=== TEST 5: remove_host deletes host
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
@@ -287,18 +292,18 @@ GET /
 GET /
 --- error_code: 200
 
-=== TEST 11: api:get_pools passes through to upstream
+=== TEST 5b: remove_host with numeric arg deletes host
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
     location = / {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:add_host("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:remove_host("primary", 1)
 
-            local pools, err = test_api:get_pools()
-            local idx = upstream.get_host_idx("a", pools.primary.hosts)
-            local host = pools.primary.hosts[idx]
-            if host == nil then
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("1", pools.primary.hosts)
+            if idx ~= nil then
                 ngx.status = 500
                 ngx.say(err)
             end
@@ -308,7 +313,29 @@ GET /
 GET /
 --- error_code: 200
 
-=== TEST 12: Cannot set non-numeric weight
+=== TEST 5c: remove_host with string arg deletes host
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = / {
+        content_by_lua '
+            test_api:add_host("primary", { host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
+            test_api:remove_host("primary", "1")
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("1", pools.primary.hosts)
+            if idx ~= nil then
+                ngx.status = 500
+                ngx.say(err)
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+
+
+=== TEST 6: Cannot set non-numeric weight
 --- http_config eval: $::HttpConfig
 --- config
     location = /a {
@@ -327,7 +354,7 @@ GET /
 GET /a
 --- error_code: 200
 
-=== TEST 12b: Can set numeric weight
+=== TEST 7b: Can set numeric weight
 --- http_config eval: $::HttpConfig
 --- config
     location = /a {
@@ -356,7 +383,7 @@ GET /a
 GET /a
 --- error_code: 200
 
-=== TEST 13: Optional host params can be set
+=== TEST 8: Optional host params can be set
 --- http_config eval: $::HttpConfig
 --- log_level: debug
 --- config
