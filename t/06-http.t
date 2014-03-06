@@ -12,7 +12,9 @@ our $HttpConfig = qq{
     error_log logs/error.log debug;
 
     lua_shared_dict test_upstream 1m;
+};
 
+our $InitConfig = qq{
     init_by_lua '
         upstream_socket  = require("resty.upstream.socket")
         upstream_http  = require("resty.upstream.http")
@@ -25,7 +27,6 @@ our $HttpConfig = qq{
         test_api:create_pool({id = "primary", timeout = 100, read_timeout = 1100, keepalive_timeout = 1 })
 
         test_api:create_pool({id = "secondary", timeout = 100, priority = 10})
-    ';
 };
 
 $ENV{TEST_NGINX_RESOLVER} = '8.8.8.8';
@@ -37,14 +38,17 @@ run_tests();
 
 __DATA__
 === TEST 1: HTTP Requests pass through
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 10 })
+    ';
+}
 --- log_level: debug
 --- config
     location = /a {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-
-
             local res, conn_info = http:request({
                 method = "GET",
                 path = "/test",
@@ -71,14 +75,18 @@ GET /a
 response
 
 === TEST 2: HTTP Status causes failover
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 10 })
+            test_api:add_host("secondary", { id="b", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 10 })
+    ';
+}
 --- log_level: debug
 --- config
     location = /a {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-            test_api:add_host("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-
             local res, conn_info = http:request({
                 method = "GET",
                 path = "/test",
@@ -116,14 +124,18 @@ GET /a
 response
 
 === TEST 3: No connections returns 504
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 10 })
+            test_api:add_host("secondary", { id="b", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 10 })
+    ';
+}
 --- log_level: debug
 --- config
     location = /a {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
-            test_api:add_host("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
-
             local res, conn_info = http:request({
                 method = "GET",
                 path = "/test",
@@ -147,14 +159,18 @@ GET /a
 --- error_code: 504
 
 === TEST 4: Connection but bad HTTP response returns 502
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 10 })
+            test_api:add_host("secondary", { id="b", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 10 })
+    ';
+}
 --- log_level: debug
 --- config
     location = /a {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
-            test_api:add_host("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-
             local res, conn_info = http:request({
                 method = "GET",
                 path = "/test",
@@ -185,13 +201,17 @@ GET /a
 --- error_code: 502
 
 === TEST 5: Read timeout can be set
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 10 })
+    ';
+}
 --- log_level: debug
 --- config
     location = /a {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-
             local res, conn_info = http:request({
                 method = "GET",
                 path = "/test",
@@ -221,13 +241,17 @@ GET /a
 --- error_code: 200
 
 === TEST 6: Pool keepalive overrides set_keepalive call
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 10 })
+    ';
+}
 --- log_level: debug
 --- config
     location = /a {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
-
            local res, conn_info = http:request({
                 method = "GET",
                 path = "/test",
@@ -273,7 +297,13 @@ GET /a
 0
 
 === TEST 7: Default background check is sent
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = true })
+    ';
+}
 --- config
     location = / {
         content_by_lua '
@@ -282,8 +312,6 @@ GET /a
     }
     location = /foo {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1, healthcheck = true })
-
             http:_http_background_func()
         ';
     }
@@ -292,7 +320,21 @@ GET /foo
 --- error_log: Background check received
 
 === TEST 8: Custom background check params
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", {
+                 id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1,
+                 healthcheck = {
+                    path = "/check",
+                    headers = {
+                        ["User-Agent"] = "Test-Agent"
+                    }
+                 }
+                })
+    ';
+}
 --- config
     location = /check {
         content_by_lua '
@@ -302,16 +344,6 @@ GET /foo
     }
     location = /foo {
         content_by_lua '
-            test_api:add_host("primary", {
-                 id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1,
-                 healthcheck = {
-                    path = "/check",
-                    headers = {
-                        ["User-Agent"] = "Test-Agent"
-                    }
-                 }
-                })
-
             http:_http_background_func()
        ';
     }
@@ -320,12 +352,16 @@ GET /foo
 --- error_log: Background check received from Test-Agent
 
 === TEST 9: Background check marks timeout host failed
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = true })
+    ';
+}
 --- config
     location = / {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1, healthcheck = true })
-
             http:_http_background_func()
             -- Run post_process inline rather than after the request is done
             upstream._post_process(false, upstream, upstream:ctx())
@@ -344,15 +380,19 @@ GET /
 --- error_code: 200
 
 === TEST 10: Background check marks http error host failed
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = true })
+    ';
+}
 --- config
     location = / {
         return 500;
     }
     location = /foo {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1, healthcheck = true })
-
             http:_http_background_func()
             -- Run post_process inline rather than after the request is done
             upstream._post_process(false, upstream, upstream:ctx())
@@ -371,15 +411,19 @@ GET /foo
 --- error_code: 200
 
 === TEST 10: Succesful request doesn't affect host
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = true })
+    ';
+}
 --- config
     location = / {
         return 200;
     }
     location = /foo {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1, healthcheck = true })
-
             http:_http_background_func()
             -- Run post_process inline rather than after the request is done
             upstream._post_process(false, upstream, upstream:ctx())

@@ -6,13 +6,12 @@ LUA_LIB_DIR ?=     $(PREFIX)/lib/lua/$(LUA_VERSION)
 INSTALL ?= install
 TEST_FILE ?= t
 
-.PHONY: all test install
+.PHONY: all test leak
 
 all: ;
 
-install: all
-	$(INSTALL) -d $(DESTDIR)/$(LUA_LIB_DIR)/resty/http
-	$(INSTALL) lib/resty/http/*.lua $(DESTDIR)/$(LUA_LIB_DIR)/resty/http/
+leak: all
+	TEST_NGINX_CHECK_LEAK=1	 PATH=$(OPENRESTY_PREFIX)/nginx/sbin:$$PATH prove -I../test-nginx/lib -r $(TEST_FILE)
 
 test: all
 	PATH=$(OPENRESTY_PREFIX)/nginx/sbin:$$PATH prove -I../test-nginx/lib -r $(TEST_FILE)

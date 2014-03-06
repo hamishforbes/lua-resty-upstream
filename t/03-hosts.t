@@ -13,6 +13,10 @@ our $HttpConfig = qq{
 
     lua_shared_dict test_upstream 1m;
 
+
+};
+
+our $InitConfig = qq{
     init_by_lua '
         upstream_socket  = require("resty.upstream.socket")
         upstream_api = require("resty.upstream.api")
@@ -23,7 +27,6 @@ our $HttpConfig = qq{
         test_api:create_pool({id = "primary", timeout = 100})
 
         test_api:create_pool({id = "secondary", timeout = 100, priority = 10})
-        ';
 };
 
 $ENV{TEST_NGINX_RESOLVER} = '8.8.8.8';
@@ -35,12 +38,17 @@ run_tests();
 
 __DATA__
 === TEST 1: Connecting to a single host
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+        test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1 })
+    ';
+}
 --- log_level: debug
 --- config
     location = / {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
 
             local ok, err = upstream:connect()
             if ok then
@@ -59,12 +67,16 @@ GET /
 OK
 
 === TEST 2: Mark single host down after 3 fails
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+        test_api:add_host("primary", { id="a", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 1 })
+    ';
+}
 --- config
     location = / {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
-
             -- Simulate 3 connection attempts
             for i=1,3 do
                 upstream:connect()
@@ -91,12 +103,18 @@ GET /
 OK
 
 === TEST 3: Mark round_robin host down after 3 fails
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+        test_api:add_host("primary", { id="a", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 9999 })
+        test_api:add_host("primary", { id="b", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 1 })
+    ';
+}
 --- config
     location = / {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 9999 })
-            test_api:add_host("primary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1 })
+
 
             -- Simulate 3 connection attempts
             for i=1,3 do
@@ -124,11 +142,16 @@ GET /
 OK
 
 === TEST 4: Manually offline hosts are not reset
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+        test_api:add_host("primary", { id="a", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 1 })
+    ';
+}
 --- config
     location = / {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 1 })
             test_api:down_host("primary", "a")
             upstream:_background_func()
 
@@ -145,12 +168,16 @@ GET /
 --- error_code: 200
 
 === TEST 5: Manually offline hosts are not reset after a natural fail
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+        test_api:add_host("primary", { id="a", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 1 })
+    ';
+}
 --- config
     location = / {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1 })
-
             local pools = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
             local host = pools.primary.hosts[idx]
@@ -175,12 +202,16 @@ GET /
 --- error_code: 200
 
 === TEST 6: Offline hosts are reset by background function
---- http_config eval: $::HttpConfig
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+        test_api:add_host("primary", { id="a", host = "127.0.0.1", port = 8$TEST_NGINX_SERVER_PORT, weight = 1 })
+    ';
+}
 --- config
     location = / {
         content_by_lua '
-            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 1 })
-
             local pools = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
             local host = pools.primary.hosts[idx]
