@@ -106,6 +106,7 @@ function _M.get_pools(self)
     return ctx.pools
 end
 
+
 local function get_lock_obj(self)
     local ctx = self:ctx()
     if not ctx.lock then
@@ -114,7 +115,11 @@ local function get_lock_obj(self)
     return ctx.lock
 end
 
+
 function _M.get_locked_pools(self)
+    if phase() == 'init' then
+        return self:get_pools()
+    end
     local lock = get_lock_obj(self)
     local ok, err = lock:lock(self.lock_key)
 
@@ -129,7 +134,11 @@ function _M.get_locked_pools(self)
     return ok, err
 end
 
+
 function _M.unlock_pools(self)
+    if phase() == 'init' then
+        return true
+    end
     local lock = get_lock_obj(self)
     local ok, err = lock:unlock(self.lock_key)
     if not ok then
@@ -137,6 +146,7 @@ function _M.unlock_pools(self)
     end
     return ok, err
 end
+
 
 function _M.get_priority_index(self)
     local ctx = self:ctx()

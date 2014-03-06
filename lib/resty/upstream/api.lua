@@ -65,6 +65,16 @@ function _M.get_pools(self, ...)
 end
 
 
+function _M.get_locked_pools(self, ...)
+    return self.upstream:get_locked_pools(...)
+end
+
+
+function _M.unlock_pools(self, ...)
+    return self.upstream:unlock_pools(...)
+end
+
+
 function _M.save_pools(self, ...)
     return self.upstream:save_pools(...)
 end
@@ -87,13 +97,25 @@ function _M.set_method(self, poolid, method)
     end
     poolid = tostring(poolid)
 
-    local pools = self:get_pools()
+    local pools, err = self:get_locked_pools()
+    if not pools then
+        return nil, err
+    end
     if not pools[poolid] then
+        self:unlock_pools()
         return nil, 'Pool not found'
     end
     pools[poolid].method = method
     ngx_log(ngx_debug, str_format('%s method set to %s', poolid, method))
-    return self:save_pools(pools)
+
+    local ok, err = self:save_pools(pools)
+    if not ok then
+        ngx_log(ngx_ERR, "Error saving pools for upstream ", self.id, " ", err)
+    end
+
+    self:unlock_pools()
+
+    return ok, err
 end
 
 
@@ -121,10 +143,14 @@ function _M.create_pool(self, opts)
     end
     poolid = tostring(poolid)
 
-    local pools = self:get_pools()
+    local pools, err = self:get_locked_pools()
+    if not pools then
+        return nil, err
+    end
 
     local ok, err = validate_pool(opts, pools, self.upstream.available_methods)
     if not ok then
+        self:unlock_pools()
         return ok, err
     end
 
@@ -147,10 +173,14 @@ function _M.create_pool(self, opts)
 
     local ok, err = self:save_pools(pools)
     if not ok then
+        self:unlock_pools()
         return ok, err
     end
     ngx_log(ngx_debug, 'Created pool '..poolid)
-    return self:sort_pools(pools)
+
+    local ok, err = self:sort_pools(pools)
+    self:unlock_pools()
+    return ok, err
 end
 
 
@@ -163,8 +193,12 @@ function _M.set_priority(self, poolid, priority)
     end
     poolid = tostring(poolid)
 
-    local pools = self:get_pools()
+    local pools, err = self:get_locked_pools()
+    if not pools then
+        return nil, err
+    end
     if pools[poolid] == nil then
+        self:unlock_pools()
         return nil, 'Pool not found'
     end
 
@@ -172,10 +206,14 @@ function _M.set_priority(self, poolid, priority)
 
     local ok, err = self:save_pools(pools)
     if not ok then
+        self:unlock_pools()
         return ok, err
     end
     ngx_log(ngx_debug, str_format('%s priority set to %d', poolid, priority))
-    return self:sort_pools(pools)
+
+    local ok, err = self:sort_pools(pools)
+    self:unlock_pools()
+    return ok, err
 end
 
 
@@ -189,18 +227,20 @@ function _M.set_weight(self, poolid, hostid, weight)
     poolid = tostring(poolid)
     hostid = tostring(hostid)
 
-    local pools = self:get_pools()
+    local pools, err = self:get_locked_pools()
     if not pools then
-        return nil, 'No pools found'
+        return nil, err
     end
 
     local pool = pools[poolid]
     if pools[poolid] == nil then
+        self:unlock_pools()
         return nil, 'Pool not found'
     end
 
     local host_idx = self.upstream.get_host_idx(hostid, pool.hosts)
     if not host_idx then
+        self:unlock_pools()
         return nil, 'Host not found'
     end
     pool.hosts[host_idx].weight = weight
@@ -208,7 +248,10 @@ function _M.set_weight(self, poolid, hostid, weight)
     ngx_log(ngx_debug,
         str_format('Host weight "%s" in "%s" set to %d', hostid, poolid, weight)
     )
-    return self:save_pools(pools)
+
+    local ok,err = self:save_pools(pools)
+    self:unlock_pools()
+    return ok, err
 end
 
 
@@ -221,8 +264,12 @@ function _M.add_host(self, poolid, host)
     end
     poolid = tostring(poolid)
 
-    local pools = self:get_pools()
+    local pools, err = self:get_locked_pools()
+    if not pools then
+        return nil, err
+    end
     if pools[poolid] == nil then
+        self:unlock_pools()
         return nil, 'Pool not found'
     end
     local pool = pools[poolid]
@@ -235,6 +282,7 @@ function _M.add_host(self, poolid, host)
         hostid = tostring(hostid)
         for _, h in pairs(pool.hosts) do
             if h.id == hostid then
+                self:unlock_pools()
                 return nil, 'Host ID already exists'
             end
         end
@@ -256,7 +304,9 @@ function _M.add_host(self, poolid, host)
     pool.hosts[#pool.hosts+1] = new_host
 
     ngx_log(ngx_debug, str_format('Host "%s" added to  "%s"', hostid, poolid))
-    return self:save_pools(pools)
+    local ok, err = self:save_pools(pools)
+    self:unlock_pools()
+    return ok,err
 end
 
 
@@ -267,23 +317,27 @@ function _M.remove_host(self, poolid, hostid)
     poolid = tostring(poolid)
     hostid = tostring(hostid)
 
-    local pools = self:get_pools()
+    local pools, err = self:get_locked_pools()
     if not pools then
-        return nil, 'No Pools'
+        return nil, err
     end
     local pool = pools[poolid]
     if not pool then
+        self:unlock_pools()
         return nil, 'Pool not found'
     end
 
     local host_idx = self.upstream.get_host_idx(hostid, pool.hosts)
     if not host_idx then
+        self:unlock_pools()
         return nil, 'Host not found'
     end
     pool.hosts[host_idx] = nil
 
     ngx_log(ngx_debug, str_format('Host "%s" removed from "%s"', hostid, poolid))
-    return self:save_pools(pools)
+    local ok, err = self:save_pools(pools)
+    self:unlock_pools()
+    return ok, err
 end
 
 
@@ -294,16 +348,18 @@ function _M.down_host(self, poolid, hostid)
     poolid = tostring(poolid)
     hostid = tostring(hostid)
 
-    local pools = self:get_pools()
+    local pools, err = self:get_locked_pools()
     if not pools then
-        return nil, 'No Pools'
+        return nil, err
     end
     local pool = pools[poolid]
     if not pool then
+        self:unlock_pools()
         return nil, 'Pool '.. poolid ..' not found'
     end
     local host_idx = self.upstream.get_host_idx(hostid, pool.hosts)
     if not host_idx then
+        self:unlock_pools()
         return nil, 'Host not found'
     end
     local host = pool.hosts[host_idx]
@@ -318,7 +374,9 @@ function _M.down_host(self, poolid, hostid)
         )
     )
 
-    return self:save_pools(pools)
+    local ok, err = self:save_pools(pools)
+    self:unlock_pools()
+    return ok, err
 end
 
 
@@ -329,16 +387,18 @@ function _M.up_host(self, poolid, hostid)
     poolid = tostring(poolid)
     hostid = tostring(hostid)
 
-    local pools = self:get_pools()
+    local pools, err = self:get_locked_pools()
     if not pools then
-        return nil, 'No Pools'
+        return nil, err
     end
     local pool = pools[poolid]
     if not pool then
+        self:unlock_pools()
         return nil, 'Pool not found'
     end
     local host_idx = self.upstream.get_host_idx(hostid, pool.hosts)
     if not host_idx then
+        self:unlock_pools()
         return nil, 'Host not found'
     end
     local host = pool.hosts[host_idx]
@@ -353,7 +413,9 @@ function _M.up_host(self, poolid, hostid)
         )
     )
 
-    return self:save_pools(pools)
+    local ok, err = self:save_pools(pools)
+    self:unlock_pools()
+    return ok, err
 end
 
 return _M
