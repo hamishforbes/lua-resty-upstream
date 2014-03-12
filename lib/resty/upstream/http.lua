@@ -162,7 +162,13 @@ function _M.check_response(self, res, http_err, host, pool)
     if not res then
         -- Request failed in some fashion
         if host.up == true then
-            ngx_log(ngx_err, (http_err or "").. " from ".. (host.id or "unknown") )
+            ngx_log(ngx_err, "HTTP Request Error from host '",
+                    (host.id or "unknown"),
+                    "' in pool '",
+                    pool.id,
+                    "': ",
+                    (http_err or "")
+                )
         end
 
         -- Mark host down and return
