@@ -1,5 +1,5 @@
 local ngx_log = ngx.log
-local ngx_err = ngx.ERR
+local ngx_ERR = ngx.ERR
 local flush = ngx.flush
 local print = ngx.print
 local req = ngx.req
@@ -15,7 +15,7 @@ if not client_body_reader then
         ngx.exit(ngx.status)
         return
     elseif err ~= nil then
-        ngx_log(ngx_err, "Error getting client body reader: ", err)
+        ngx_log(ngx_ERR, "Error getting client body reader: ", err)
     end
 end
 
