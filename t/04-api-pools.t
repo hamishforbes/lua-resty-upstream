@@ -14,6 +14,7 @@ our $HttpConfig = qq{
     lua_shared_dict test_upstream 1m;
 
     init_by_lua '
+        cjson = require "cjson"
         upstream_socket  = require("resty.upstream.socket")
         upstream_api = require("resty.upstream.api")
 

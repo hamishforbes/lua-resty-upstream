@@ -16,6 +16,7 @@ our $HttpConfig = qq{
 
 our $InitConfig = qq{
     init_by_lua '
+        cjson = require "cjson"
         upstream_socket  = require("resty.upstream.socket")
         upstream_http  = require("resty.upstream.http")
         upstream_api = require("resty.upstream.api")
