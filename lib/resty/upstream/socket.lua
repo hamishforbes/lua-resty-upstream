@@ -213,7 +213,7 @@ end
 function _M._init_background_thread(dict, flag, thread, ...)
     -- Start the thread a short time after worker is initialised
     -- Allows the pid to be correctly saved in the dict
-    local ok, err = ngx_timer_at(0.1, thread, ...)
+    local ok, err = ngx_timer_at(1, thread, ...)
     if ok then
         dict:set(flag, ngx.worker.pid())
     else
