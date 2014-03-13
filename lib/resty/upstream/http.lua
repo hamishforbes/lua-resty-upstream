@@ -1,7 +1,8 @@
+local ngx_worker_pid = ngx.worker.pid
 local ngx_timer_at = ngx.timer.at
 local ngx_log = ngx.log
-local ngx_err = ngx.ERR
-local ngx_debug = ngx.DEBUG
+local ngx_ERR = ngx.ERR
+local ngx_DEBUG = ngx.DEBUG
 local ngx_var = ngx.var
 local str_lower = string.lower
 local str_format = string.format
@@ -113,7 +114,7 @@ function _M._http_background_func(self)
                     failed_request(self, host.id, pool.id)
                     if host.up then
                         -- Only log if it wasn't already down
-                        ngx_log(ngx_err,
+                        ngx_log(ngx_ERR,
                             str_format("Connection failed for host %s (%s:%i) in pool %s",
                              host.id, host.host, host.port, poolid)
                         )
@@ -133,10 +134,13 @@ end
 
 local http_background_thread
 http_background_thread = function(premature, self)
-    local upstream = self.upstream
-    upstream.dict:delete(upstream.background_flag)
-
     if premature then
+        ngx_log(ngx_DEBUG, ngx_worker_pid(), " background thread prematurely exiting")
+        return
+    end
+
+    local upstream = self.upstream
+    if not upstream:there_can_be_only_one() then
         return
     end
 
@@ -164,7 +168,7 @@ function _M.check_response(self, res, http_err, host, pool)
     if not res then
         -- Request failed in some fashion
         if host.up == true then
-            ngx_log(ngx_err, "HTTP Request Error from host '",
+            ngx_log(ngx_ERR, "HTTP Request Error from host '",
                     (host.id or "unknown"),
                     "' in pool '",
                     pool.id,
@@ -192,7 +196,7 @@ function _M.check_response(self, res, http_err, host, pool)
             failed_request(self, host.id, pool.id)
 
             if host.up == true then
-                ngx_log(ngx_err,
+                ngx_log(ngx_ERR,
                     str_format('HTTP %s from Host "%s" (%s:%i) in pool "%s"',
                         status_code or "nil",
                         host.id     or "nil",
@@ -237,10 +241,10 @@ function _M.request(self, params)
         if not httpc then
             -- Either connect or http failed to all available hosts
             if http_err then
-                ngx_log(ngx_err, 'Upstream Error: 502')
+                ngx_log(ngx_ERR, 'Upstream Error: 502')
                 return nil, {err = http_err, status =  502}
             end
-            ngx_log(ngx_err, 'Upstream Error: 504')
+            ngx_log(ngx_ERR, 'Upstream Error: 504')
             return nil, {err = conn_info, status = 504}
         end
 

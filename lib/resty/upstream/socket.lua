@@ -1,5 +1,6 @@
 local ngx_socket_tcp = ngx.socket.tcp
 local ngx_timer_at = ngx.timer.at
+local ngx_worker_pid = ngx.worker.pid
 local ngx_log = ngx.log
 local ngx_DEBUG = ngx.DEBUG
 local ngx_ERR = ngx.ERR
@@ -28,11 +29,15 @@ local _M = {
 
 local mt = { __index = _M }
 
+
 local background_thread
 background_thread = function(premature, self)
-    self.dict:delete(self.background_flag)
-
     if premature then
+        ngx.log(ngx.DEBUG, ngx_worker_pid(), " background thread prematurely exiting")
+        return
+    end
+
+    if not self:there_can_be_only_one() then
         return
     end
 
@@ -40,6 +45,20 @@ background_thread = function(premature, self)
 
     -- Call ourselves on a timer again
     local ok, err = ngx_timer_at(self.background_period, background_thread, self)
+end
+
+
+function _M.there_can_be_only_one(self)
+    -- Ensure there is only 1 background thread running,
+    -- by checking the current thread's PID against the shared dict PID
+    local flagged_pid = self.dict:get(self.background_flag)
+    local pid = ngx_worker_pid()
+    if flagged_pid ~= pid then
+        return false
+    else
+        ngx_log(ngx_DEBUG, "background thread running in ", pid)
+        return true
+    end
 end
 
 
@@ -192,15 +211,13 @@ end
 
 
 function _M._init_background_thread(dict, flag, thread, ...)
-    -- Launch the background process if not running
-    local background_running = dict:get(flag)
-    if not background_running then
-        local ok, err = ngx_timer_at(0, thread, ...)
-        if ok then
-            dict:set(flag, 1)
-        else
-            ngx_log(ngx_ERR, "Failed to start background thread: "..err)
-        end
+    -- Start the thread a short time after worker is initialised
+    -- Allows the pid to be correctly saved in the dict
+    local ok, err = ngx_timer_at(0.1, thread, ...)
+    if ok then
+        dict:set(flag, ngx.worker.pid())
+    else
+        ngx_log(ngx_ERR, "Failed to start background thread: "..err)
     end
 end
 
@@ -287,10 +304,12 @@ function _M._post_process(premature, self, ctx)
     return ok, err
 end
 
+
 function _M.post_process(self)
     -- Run in a background thread immediately after the request is done
     ngx_timer_at(0, self._post_process, self, self:ctx())
 end
+
 
 local function get_live_hosts(all_hosts, failed_hosts)
     if all_hosts == nil then
