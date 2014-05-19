@@ -63,7 +63,7 @@ init_by_lua '
     upstream_socket  = require("resty.upstream.socket")
     upstream_api = require("resty.upstream.api")
 
-    upstream, configured = socket_upstream:new("my_upstream_dict")
+    upstream, configured = upstream_socket:new("my_upstream_dict")
     api = upstream_api:new(upstream)
 
     if not configured then -- Only reconfigure on start, shared mem persists across a HUP
