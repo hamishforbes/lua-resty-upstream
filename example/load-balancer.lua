@@ -69,5 +69,5 @@ end
 
 local ok,err = http_upstream:set_keepalive()
 
-upstream:post_process()
+upstream:process_failed_hosts()
 
