@@ -8,8 +8,6 @@ local ngx_INFO = ngx.INFO
 local str_format = string.format
 local tbl_insert = table.insert
 local tbl_sort = table.sort
-local randomseed = math.randomseed
-local random = math.random
 local now = ngx.now
 local pairs = pairs
 local ipairs = ipairs
@@ -111,7 +109,6 @@ function _M.new(_, dict_name, id)
         configured = false
     end
 
-    randomseed(now())
     return setmetatable(self, mt), configured
 end
 
@@ -404,6 +401,7 @@ function _M.connect_failed(self, host, poolid)
         )
     )
 end
+
 
 local function select_weighted_rr_host(hosts, rr_vars)
     local idx = rr_vars.idx
