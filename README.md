@@ -46,13 +46,13 @@ Define your upstream pools and hosts in init_by_lua, this will be saved into the
 
 Use the `connect` method to return a connected tcp [socket](https://github.com/openresty/lua-nginx-module#ngxsockettcp).
 
-Alternatively pass in a resty module (e.g [lua-resty-redis](https://github.com/openresty/lua-resty-redis) or [lua-resty-http](https://github.com/pintsize/lua-resty-http)) that implements `connect()` and `set_timeout()`.
+Alternatively pass in a resty module (e.g [lua-resty-redis](https://github.com/openresty/lua-resty-redis) or [lua-resty-http](https://github.com/pintsized/lua-resty-http)) that implements `connect()` and `set_timeout()`.
 
 Call `process_failed_hosts` to handle failed hosts without blocking current request.
 
 Use `resty.upstream.api` to modify upstream configuration during init or runtime, this is recommended!
 
-`resty.upstream.http`  wraps the [lua-resty-http](https://github.com/pintsize/lua-resty-http) from @pintsized.
+`resty.upstream.http`  wraps the [lua-resty-http](https://github.com/pintsized/lua-resty-http) from @pintsized.
 
 It allows for failover based on HTTP status codes as well as socket connection status.
 
