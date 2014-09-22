@@ -96,7 +96,8 @@ function _M.new(_, dict_name, id)
     local self = {
         id = id,
         dict = dict,
-        dict_name = dict_name
+        dict_name = dict_name,
+        rr_vars = {},
     }
     -- Create unique dictionary keys for this instance of upstream
     self.pools_key = self.id..'_pools'
@@ -196,9 +197,57 @@ function _M.get_priority_index(self)
 end
 
 
-function _M.save_pools(self, pools)
-    self:ctx().pools = pools
+local function _gcd(a,b)
+    -- Tail recursive gcd function
+    if b == 0 then
+        return a
+    else
+        return _gcd(b, a % b)
+    end
+end
 
+
+local function calc_gcd_weight(hosts)
+    -- Calculate the GCD and maximum weight value from a set of hosts
+    local gcd = 0
+    local len = #hosts - 1
+    local max_weight = 0
+    local i = 1
+
+    if len < 1 then
+        return 0, 0
+    end
+
+    repeat
+        local tmp = _gcd(hosts[i].weight, hosts[i+1].weight)
+        if tmp > gcd then
+            gcd = tmp
+        end
+        if hosts[i].weight > max_weight then
+            max_weight = hosts[i].weight
+        end
+        i = i +1
+    until i >= len
+    if hosts[i].weight > max_weight then
+        max_weight = hosts[i+1].weight
+    end
+
+    return gcd, max_weight
+end
+
+
+function _M.save_pools(self, pools)
+    -- Pool has changed, recalculate gcd and max_weight
+    local rr_vars = self.rr_vars
+    for id,pool in pairs(pools) do
+        if not rr_vars[id] then
+            rr_vars[id] = {idx = 0, cw = 0}
+        end
+        local pool_rr = rr_vars[id]
+        pool_rr.gcd, pool_rr.max_weight = calc_gcd_weight(pool.hosts)
+    end
+
+    self:ctx().pools = pools
     local serialised = json_encode(pools)
     return self.dict:set(self.pools_key, serialised)
 end
@@ -238,6 +287,7 @@ function _M._background_func(self)
     -- Reset state for any failed hosts
     local pools = self:get_locked_pools()
 
+    local changed = false
     for poolid,pool in pairs(pools) do
         local failed_timeout = pool.failed_timeout
         local max_fails = pool.max_fails
@@ -250,13 +300,17 @@ function _M._background_func(self)
                 host.up = true
                 host.failcount = 0
                 host.lastfail = 0
+                changed = true
             end
         end
     end
 
-    local ok, err = self:save_pools(pools)
-    if not ok then
-        ngx_log(ngx_ERR, "Error saving pools for upstream ", self.id, ": ", err)
+    local ok, err = true, nil
+    if changed then
+        ok, err = self:save_pools(pools)
+        if not ok then
+            ngx_log(ngx_ERR, "Error saving pools for upstream ", self.id, ": ", err)
+        end
     end
     self:unlock_pools()
     return ok, err
@@ -283,6 +337,7 @@ function _M._process_failed_hosts(premature, self, ctx)
         return
     end
 
+    local changed = false
     for poolid,hosts in pairs(failed) do
         local pool = pools[poolid]
         local failed_timeout = pool.failed_timeout
@@ -293,6 +348,7 @@ function _M._process_failed_hosts(premature, self, ctx)
             local host_idx = get_host_idx(id, pool_hosts)
             local host = pool_hosts[host_idx]
 
+            changed = true
             host.lastfail = now
             host.failcount = host.failcount + 1
             if host.failcount >= max_fails and host.up == true then
@@ -304,9 +360,12 @@ function _M._process_failed_hosts(premature, self, ctx)
         end
     end
 
-    local ok, err = self:save_pools(pools)
-    if not ok then
-        ngx_log(ngx_ERR, "Error saving pools for upstream ", self.id, " ", err)
+    local ok, err = true, nil
+    if changed then
+        ok, err = self:save_pools(pools)
+        if not ok then
+            ngx_log(ngx_ERR, "Error saving pools for upstream ", self.id, " ", err)
+        end
     end
 
     self:unlock_pools()
@@ -331,35 +390,6 @@ function _M.get_failed_hosts(self, poolid)
 end
 
 
-local function get_live_hosts(all_hosts, failed_hosts)
-    if all_hosts == nil then
-        return {}, 0, 0
-    end
-
-    local live_hosts = {}
-
-    -- Get live hosts in the pool
-    for i, host in ipairs(all_hosts) do
-        if host.up and not failed_hosts[host.id] then
-            live_hosts[i] = host
-        end
-    end
-
-    return live_hosts
-end
-
-
-local function get_total_weight(hosts)
-    local weight = 0
-    for _, host in ipairs(hosts) do
-        if host ~= false then
-            weight = weight + (host.weight or 0)
-        end
-    end
-    return weight
-end
-
-
 function _M.connect_failed(self, host, poolid)
     -- Flag host as failed
     local hostid = host.id
@@ -375,28 +405,43 @@ function _M.connect_failed(self, host, poolid)
     )
 end
 
+local function select_weighted_rr_host(hosts, rr_vars)
+    local idx = rr_vars.idx
+    local cw = rr_vars.cw
+    local gcd = rr_vars.gcd
+    local max_weight = rr_vars.max_weight
 
-local function select_weighted_random_host(hosts)
-    local total_weight = get_total_weight(hosts)
-    local rand = random(0,total_weight)
-    local running = 0
+    local hostcount = #hosts
 
-    for idx,host in ipairs(hosts) do
-        if host ~= false then
-            -- Keep a running total of the weights so far
-            running = running + host.weight
-            if rand <= running then
-                return host, idx
+    local iters = 0
+    repeat
+        idx = idx +1
+        if idx > hostcount then
+            idx = 1
+        end
+        if idx == 1 then
+            cw = cw - gcd
+            if cw <= 0 then
+                cw = max_weight
+                if cw == 0 then
+                    return nil
+                end
             end
         end
-    end
-
+        local host = hosts[idx]
+        if host ~= false and host.up == true and host.weight >= cw then
+            rr_vars.idx, rr_vars.cw = idx, cw
+            return host, idx
+        end
+        iters = iters+1
+    until iters > hostcount -- Checked every host, must all be down
     return
 end
 
 
 _M.available_methods.round_robin = function(self, pool, sock)
-    local hosts = get_live_hosts(pool.hosts, self:get_failed_hosts(pool.id))
+    local hosts = pool.hosts
+    local rr_vars = self.rr_vars[pool.id]
 
     -- Attempt a connection
     if #hosts == 1 then
@@ -413,8 +458,7 @@ _M.available_methods.round_robin = function(self, pool, sock)
     local connected, err
     repeat
 
-        local host, idx = select_weighted_random_host(hosts)
-
+        local host, idx = select_weighted_rr_host(hosts, rr_vars)
         if not host then
             -- Ran out of hosts, break out of the loop (go to next pool)
             break
@@ -470,7 +514,7 @@ function _M.connect(self, sock)
 
             if connected then
                 -- Return connected socket!
-                ngx.log(ngx.DEBUG, 'connected to '..host.id)
+                ngx_log(ngx_DEBUG, 'connected to '..host.id)
                 return sock, {host = host, pool = pool}
             end
         end
