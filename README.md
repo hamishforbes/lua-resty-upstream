@@ -41,14 +41,14 @@ Requires ngx_lua > 0.9.5
 
 #Overview
 
-Create a lua [shared dictionary](https://github.com/chaoslawful/lua-nginx-module#lua_shared_dict).
+Create a lua [shared dictionary](https://github.com/openresty/lua-nginx-module#lua_shared_dict).
 Define your upstream pools and hosts in init_by_lua, this will be saved into the shared dictionary.
 
-Use the `connect` method to return a connected tcp [socket](https://github.com/chaoslawful/lua-nginx-module#ngxsockettcp).
+Use the `connect` method to return a connected tcp [socket](https://github.com/openresty/lua-nginx-module#ngxsockettcp).
 
-Alternatively pass in a resty module (e.g [lua-resty-redis](https://github.com/agentzh/lua-resty-redis) or [lua-resty-http](https://github.com/pintsize/lua-resty-http)) that implements `connect()` and `set_timeout()`.
+Alternatively pass in a resty module (e.g [lua-resty-redis](https://github.com/openresty/lua-resty-redis) or [lua-resty-http](https://github.com/pintsize/lua-resty-http)) that implements `connect()` and `set_timeout()`.
 
-Call `process_failed_hosts` in log_by_lua to handle failed hosts etc.
+Call `process_failed_hosts` to handle failed hosts without blocking current request.
 
 Use `resty.upstream.api` to modify upstream configuration during init or runtime, this is recommended!
 
@@ -91,9 +91,8 @@ server {
     location / {
         content_by_lua '
             local sock, err = upstream:connect()
+            upstream:process_failed_hosts()
         ';
-
-        log_by_lua 'upstream:process_failed_hosts()';
     }
 
 }
@@ -119,7 +118,7 @@ Initialises the background thread, should be called in `init_worker_by_lua`
 Attempts to connect to a host in the defined pools in priority order using the selected load balancing method.
 Returns a connected socket and a table containing the connected `host`, `poolid` and `pool` or nil and an error message.
 
-When passed a [socket](https://github.com/chaoslawful/lua-nginx-module#ngxsockettcp) or resty module it will return the same object after successful connection or nil.
+When passed a [socket](https://github.com/openresty/lua-nginx-module#ngxsockettcp) or resty module it will return the same object after successful connection or nil.
 
 ```lua
 resty_redis = require('resty.redis')
@@ -140,7 +139,8 @@ local ok, err = redis:get('key')
 ### process_failed_hosts
 `syntax: ok, err = upstream:process_failed_hosts()`
 
-Processes any failed or recovered hosts from the current request
+Processes any failed or recovered hosts from the current request.
+Spawns an immediate callback via [ngx.timer.at](https://github.com/openresty/lua-nginx-module#ngxtimerat), does not block current request.
 
 
 ### get_pools
