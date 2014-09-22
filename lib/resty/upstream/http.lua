@@ -44,16 +44,10 @@ function _M.new(_, upstream)
 end
 
 
-local function failed_request(self, host, pool)
+local function failed_request(self, host, poolid)
     local upstream = self.upstream
-    local ctx = upstream:ctx()
-
-    local failed_pool = ctx.failed[pool]
-    if not failed_pool then
-        ctx.failed[pool] = {}
-        failed_pool = ctx.failed[pool]
-    end
-    failed_pool[host] = true
+    local failed_hosts = upstream:get_failed_hosts(poolid)
+    failed_hosts[host] = true
 end
 
 
@@ -138,29 +132,33 @@ http_background_thread = function(premature, self)
         ngx_log(ngx_DEBUG, ngx_worker_pid(), " background thread prematurely exiting")
         return
     end
-
     local upstream = self.upstream
-    if not upstream:there_can_be_only_one() then
+
+    -- Call ourselves on a timer again
+    local ok, err = ngx_timer_at(upstream.background_period, http_background_thread, self)
+
+    if not upstream:get_background_lock() then
         return
     end
 
     -- HTTP active checks
     self:_http_background_func()
-    -- Run post_process inline rather than after the request is done
-    upstream._post_process(false, upstream, upstream:ctx())
+    -- Run process_failed_hosts inline rather than after the request is done
+    upstream._process_failed_hosts(false, upstream, upstream:ctx())
 
     -- Run upstream.socket background thread
     upstream:_background_func()
 
-    -- Call ourselves on a timer again
-    local ok, err = ngx_timer_at(upstream.background_period, http_background_thread, self)
+    upstream:release_background_lock()
 end
 
 
--- Wrapper on upstream.socket's _init_background_thread
+
 function _M.init_background_thread(self)
-    local upstream = self.upstream
-    upstream._init_background_thread(upstream.dict, upstream.background_flag, http_background_thread, self)
+    local ok, err = ngx_timer_at(1, http_background_thread, self)
+    if not ok then
+        ngx_log(ngx_ERR, "Failed to start background thread: "..err)
+    end
 end
 
 

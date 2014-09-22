@@ -10,7 +10,7 @@ Upstream connection load balancing and failover module
     * [new](#new)
     * [init_background_thread](#init_background_thread)
     * [connect](#connect)
-    * [post_process](#post_process)
+    * [process_failed_hosts](#process_failed_hosts)
     * [get_pools](#get_pools)
     * [save_pools](#save_pools)
     * [sort_pools](#sort_pools)
@@ -48,7 +48,7 @@ Use the `connect` method to return a connected tcp [socket](https://github.com/c
 
 Alternatively pass in a resty module (e.g [lua-resty-redis](https://github.com/agentzh/lua-resty-redis) or [lua-resty-http](https://github.com/pintsize/lua-resty-http)) that implements `connect()` and `set_timeout()`.
 
-Call `post_process` in log_by_lua to handle failed hosts etc.
+Call `process_failed_hosts` in log_by_lua to handle failed hosts etc.
 
 Use `resty.upstream.api` to modify upstream configuration during init or runtime, this is recommended!
 
@@ -93,7 +93,7 @@ server {
             local sock, err = upstream:connect()
         ';
 
-        log_by_lua 'upstream:post_process()';
+        log_by_lua 'upstream:process_failed_hosts()';
     }
 
 }
@@ -137,8 +137,8 @@ ngx.log(ngx.info, 'Connected to ' .. err.host.host .. ':' .. err.host.port)
 local ok, err = redis:get('key')
 ```
 
-### post_process
-`syntax: ok, err = upstream:post_process()`
+### process_failed_hosts
+`syntax: ok, err = upstream:process_failed_hosts()`
 
 Processes any failed or recovered hosts from the current request
 

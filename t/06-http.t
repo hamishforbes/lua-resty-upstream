@@ -364,8 +364,8 @@ GET /foo
     location = / {
         content_by_lua '
             http:_http_background_func()
-            -- Run post_process inline rather than after the request is done
-            upstream._post_process(false, upstream, upstream:ctx())
+            -- Run process_failed_hosts inline rather than after the request is done
+            upstream._process_failed_hosts(false, upstream, upstream:ctx())
 
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
@@ -395,8 +395,8 @@ GET /
     location = /foo {
         content_by_lua '
             http:_http_background_func()
-            -- Run post_process inline rather than after the request is done
-            upstream._post_process(false, upstream, upstream:ctx())
+            -- Run process_failed_hosts inline rather than after the request is done
+            upstream._process_failed_hosts(false, upstream, upstream:ctx())
 
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
@@ -426,8 +426,8 @@ GET /foo
     location = /foo {
         content_by_lua '
             http:_http_background_func()
-            -- Run post_process inline rather than after the request is done
-            upstream._post_process(false, upstream, upstream:ctx())
+            -- Run process_failed_hosts inline rather than after the request is done
+            upstream._process_failed_hosts(false, upstream, upstream:ctx())
 
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)

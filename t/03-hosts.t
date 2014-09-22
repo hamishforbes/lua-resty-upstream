@@ -55,7 +55,7 @@ __DATA__
             if ok then
                 ngx.say("OK")
             else
-                ngx.say(err)
+                ngx.say(cjson.encode(err))
             end
         ';
     }
@@ -81,8 +81,8 @@ OK
             -- Simulate 3 connection attempts
             for i=1,3 do
                 upstream:connect()
-                -- Run post_process inline rather than after the request is done
-                upstream._post_process(false, upstream, upstream:ctx())
+                -- Run process_failed_hosts inline rather than after the request is done
+                upstream._process_failed_hosts(false, upstream, upstream:ctx())
             end
 
             pools = upstream:get_pools()
@@ -120,8 +120,8 @@ OK
             -- Simulate 3 connection attempts
             for i=1,3 do
                 upstream:connect()
-                -- Run post_process inline rather than after the request is done
-                upstream._post_process(false, upstream, upstream:ctx())
+                -- Run process_failed_hosts inline rather than after the request is done
+                upstream._process_failed_hosts(false, upstream, upstream:ctx())
             end
 
             pools = upstream:get_pools()

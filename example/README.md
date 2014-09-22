@@ -42,7 +42,7 @@ Then we read the response body, if available, from the upstream host in chunks a
 
 Lastly we call `set_keepalive()` to let the pool configuration and http response determine whether to close the socket or put it into the connection pool.
 
-In `log_by_lua` we call `post_process()` on the socket upstream module to save any failed hosts back to the dictionary.
+In `log_by_lua` we call `process_failed_hosts()` on the socket upstream module to save any failed hosts back to the dictionary.
 At this point the request has already been completed so this won't affect the response time for the client.
 
 ## api
