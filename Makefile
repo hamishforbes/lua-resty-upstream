@@ -15,4 +15,5 @@ leak: all
 
 test: all
 	TEST_NGINX_NO_SHUFFLE=1 PATH=$(OPENRESTY_PREFIX)/nginx/sbin:$$PATH prove -I../test-nginx/lib -r $(TEST_FILE)
+	util/lua-releng.pl
 
