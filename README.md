@@ -313,9 +313,14 @@ api:add_host("primary", {host = 123.123.123.123, port = 80, healthcheck = true})
 ```
 
 ### new
-`syntax: httpc, err = upstream_http:new(upstream)`
+`syntax: httpc, err = upstream_http:new(upstream, ssl_opts?)`
 
 Returns a new http upstream object using the provided upstream object.
+
+`ssl_opts` is an optional table for configuring SSL support.
+ * `ssl` set to `true` to enable SSL Handshaking, default `false`
+ * `ssl_verify` set to `false` to disable SSL certificate verification, default `true`
+ * `sni_host` a string to use as the sni hostname, default is the request's Host header
 
 ### init_background_thread
 `syntax: ok, err = upstream_http:init_background_thread()`

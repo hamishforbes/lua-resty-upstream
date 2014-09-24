@@ -10,22 +10,23 @@ Then we create a new socket upstream instance and define 2 pools, `primary` and 
 Set the IPs and ports to whatever is appropriate for your environment.
 The pools have some keepalive and timeout settings configured
 
-We've also pulled in cjson for use in the API later on.
-
 Instances are created for both the API and http upstream modules.
+
+Repeat for the SSL enable origin servers.
 
 ## init_worker_by_lua
 
-We call `init_background_thread()` here to start the background worker.
+We call `init_background_thread()` here on both http upstream instances to start the background workers.
 
 This worker will restore dead hosts after the defined timeout period and perform background checks on hosts.
 
 
 ## lua-load-balancer
 
-In our main server block, listening on port 80, we pass everything to `load-balancer.lua` in `content_by_lua`.
+In our main server block, listening on port 80 and on port 443 for ssl, we pass everything to `load-balancer.lua` in `content_by_lua`.
 
-In `load-balancer.lua` we can use `http_upstream` as if it was an instance of lua-resty-http.
+In `load-balancer.lua` we check the scheme variable and select the right upstream instance.
+`httpc` can then be used as if it was an instance of lua-resty-http.
 The only real difference is the second return value from `request()` is a table.
 
 We first get the request body iterator and return a 411 error if the client is attempting to send a chunked request.
@@ -40,10 +41,10 @@ You don't *have* to use these status codes, you can do whatever you like at this
 If we successfully made a request to one of the hosts then we strip out hop-by-hop headers and add the rest of the upstream response headers to the current request's response headers.
 Then we read the response body, if available, from the upstream host in chunks and flush back to the client.
 
-Lastly we call `set_keepalive()` to let the pool configuration and http response determine whether to close the socket or put it into the connection pool.
+We call `set_keepalive()` to let the pool configuration and http response determine whether to close the socket or put it into the connection pool.
 
-In `log_by_lua` we call `process_failed_hosts()` on the socket upstream module to save any failed hosts back to the dictionary.
-At this point the request has already been completed so this won't affect the response time for the client.
+Lastly we call `process_failed_hosts()` on the socket upstream module to save any failed hosts back to the dictionary.
+This function triggers an immediate callback to run once the request has finished and so this doesn't affect the response time for the client.
 
 ## api
 

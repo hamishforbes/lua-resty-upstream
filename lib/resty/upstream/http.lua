@@ -11,7 +11,7 @@ local tostring = tostring
 local http = require("resty.http")
 
 local _M = {
-    _VERSION = '0.01',
+    _VERSION = '0.02',
 }
 
 local mt = { __index = _M }
@@ -36,9 +36,18 @@ local check_defaults = {
 }
 
 
-function _M.new(_, upstream)
+local ssl_defaults = {
+    ssl = false,
+    ssl_verify = true,
+    sni_host = nil,
+}
+
+
+function _M.new(_, upstream, ssl_opts)
+    local ssl_opts = setmetatable(ssl_opts or {}, {__index = ssl_defaults})
     local self = {
-        upstream = upstream
+        upstream = upstream,
+        ssl_opts = ssl_opts
     }
     return setmetatable(self, mt)
 end
@@ -109,13 +118,29 @@ function _M._http_background_func(self)
                     if host.up then
                         -- Only log if it wasn't already down
                         ngx_log(ngx_ERR,
-                            str_format("Connection failed for host %s (%s:%i) in pool %s",
-                             host.id, host.host, host.port, poolid)
+                            str_format("Connection failed for host %s (%s:%i) in pool %s: %s",
+                             host.id, host.host, host.port, poolid, err)
                         )
                     end
                 else
                     -- Set read timeout
                     httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
+
+                    local ssl_opts = self.ssl_opts
+                    if ssl_opts.ssl then
+                        -- TODO: SSL Session reuse
+                        local ok, err = httpc:ssl_handshake(nil, ssl_opts.sni_name, ssl_opts.verify)
+                        if not ok then
+                            failed_request(self, host.id, pool.id)
+                            if host.up then
+                                -- Only log if it wasn't already down
+                                ngx_log(ngx_ERR,
+                                    str_format("SSL Handshake failed for host %s (%s:%i) in pool %s: %s",
+                                     host.id, host.host, host.port, poolid, err)
+                                )
+                            end
+                        end
+                    end
 
                     local res, err = http_check_request(self, httpc, host.healthcheck)
                     res, err = self:check_response(res, err, host, pool)
@@ -151,7 +176,6 @@ http_background_thread = function(premature, self)
 
     upstream:release_background_lock()
 end
-
 
 
 function _M.init_background_thread(self)
@@ -211,8 +235,7 @@ end
 
 
 function _M.httpc(self)
-    local upstream = self.upstream
-    local ctx = upstream:ctx()
+    local ctx = self.upstream:ctx()
     if not ctx.httpc then
         ctx.httpc = http.new()
     end
@@ -225,43 +248,68 @@ function _M.get_client_body_reader(self, ...)
 end
 
 
-function _M.request(self, params)
-    local httpc = self:httpc()
-    local upstream = self.upstream
-    local res_header = ngx.header
-    local req = ngx.req
+local function _request(self, upstream, httpc, params)
+    local httpc, conn_info = upstream:connect(httpc)
 
-    local res, err, http_err, status_code, conn_info
+    if not httpc then
+        -- Connection err
+        return nil, conn_info
+    end
 
-    repeat
-        httpc, conn_info = upstream:connect(httpc)
+    local host = conn_info.host or {}
+    local pool = conn_info.pool or {}
 
-        if not httpc then
-            -- Either connect or http failed to all available hosts
-            if http_err then
-                ngx_log(ngx_ERR, 'Upstream Error: 502')
-                return nil, {err = http_err, status =  502}
-            end
-            ngx_log(ngx_ERR, 'Upstream Error: 504')
-            return nil, {err = conn_info, status = 504}
+    local ssl_opts = self.ssl_opts
+    if ssl_opts.ssl then
+        -- TODO: SSL Session reuse
+        local ok, err = httpc:ssl_handshake(nil, ssl_opts.sni_host or ngx.var.host, ssl_opts.ssl_verify)
+        if not ok then
+            ngx_log(ngx_ERR, "SSL Error: ",err)
+            failed_request(self, host.id, pool.id)
+            return ok, err
         end
+    end
 
-        local host = conn_info.host or {}
-        local pool = conn_info.pool or {}
+    httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
 
-        httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
+    local res, http_err = httpc:request(params)
+    res, http_err = self:check_response(res, http_err, host, pool)
 
-        res, http_err = httpc:request(params)
-        res, http_err = self:check_response(res, http_err, host, pool)
-    until res
-
-    self.conn_info = conn_info
+    if not res then
+        return nil, http_err
+    end
     return res, conn_info
 end
 
 
-function _M.set_keepalive(self)
+function _M.request(self, params)
+    local httpc = self:httpc()
+    local upstream = self.upstream
 
+    local prev_err
+    repeat
+        local res, err = _request(self, upstream, httpc, params)
+        if res then
+            self.conn_info = err
+            return res, err
+        else
+            -- Either connect or http failed to all available hosts
+            if err == "No available upstream hosts" then
+                if prev_err then
+                    -- Got a connection at some point but bad HTTP
+                    return nil, {err = prev_err, status = 502}
+                else
+                    -- No connections at all
+                    return nil, {err = err, status = 504}
+                end
+            end
+            prev_err = err
+        end
+    until res
+end
+
+
+function _M.set_keepalive(self)
     local pool = self.conn_info.pool
     local keepalive_timeout = pool.keepalive_timeout or defaults.keepalive_timeout
     local keepalive_pool    = pool.keepalive_pool    or defaults.keepalive_pool

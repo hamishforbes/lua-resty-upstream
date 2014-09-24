@@ -7,7 +7,15 @@ local ngx_var = ngx.var
 local str_lower = string.lower
 local res_header = ngx.header
 
-local client_body_reader, err = http_upstream:get_client_body_reader()
+local httpc = http_upstream
+local upstream = upstream
+
+if ngx.var.scheme == "https" then
+    httpc = https_upstream
+    upstream = upstream_ssl
+end
+
+local client_body_reader, err = httpc:get_client_body_reader()
 if not client_body_reader then
     if err == "chunked request bodies not supported yet" then
         ngx.status = 411
@@ -19,7 +27,7 @@ if not client_body_reader then
     end
 end
 
-local res, conn_info = http_upstream:request{
+local res, conn_info = httpc:request{
     method = req.get_method(),
     path = (ngx_var.uri .. ngx_var.is_args .. (ngx_var.args or "")),
     body = client_body_reader,
@@ -67,7 +75,7 @@ if reader then
     until not chunk
 end
 
-local ok,err = http_upstream:set_keepalive()
+local ok,err = httpc:set_keepalive()
 
 upstream:process_failed_hosts()
 

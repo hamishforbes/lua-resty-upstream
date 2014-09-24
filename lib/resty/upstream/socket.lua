@@ -403,7 +403,7 @@ function _M.connect_failed(self, host, poolid)
 end
 
 
-local function select_weighted_rr_host(hosts, rr_vars)
+local function select_weighted_rr_host(hosts, failed_hosts, rr_vars)
     local idx = rr_vars.idx
     local cw = rr_vars.cw
     local gcd = rr_vars.gcd
@@ -427,9 +427,13 @@ local function select_weighted_rr_host(hosts, rr_vars)
             end
         end
         local host = hosts[idx]
-        if host ~= false and host.up == true and host.weight >= cw then
-            rr_vars.idx, rr_vars.cw = idx, cw
-            return host, idx
+        if  host ~= false and
+            host.up == true and
+            host.weight >= cw and
+            failed_hosts[host.id] == nil
+            then
+                rr_vars.idx, rr_vars.cw = idx, cw
+                return host, idx
         end
         iters = iters+1
     until iters > hostcount -- Checked every host, must all be down
@@ -439,6 +443,7 @@ end
 
 _M.available_methods.round_robin = function(self, pool, sock)
     local hosts = pool.hosts
+    local poolid = pool.id
     local rr_vars = self.rr_vars[pool.id]
 
     -- Attempt a connection
@@ -447,16 +452,18 @@ _M.available_methods.round_robin = function(self, pool, sock)
         local host = hosts[1]
         local connected, err = sock:connect(host.host, host.port)
         if not connected then
-            self:connect_failed(host, pool.id)
+            self:connect_failed(host, poolid)
         end
         return connected, sock, host, err
     end
+
+    local failed_hosts = self:get_failed_hosts(poolid)
 
     -- Loop until we run out of hosts or have connected
     local connected, err
     repeat
 
-        local host, idx = select_weighted_rr_host(hosts, rr_vars)
+        local host, idx = select_weighted_rr_host(hosts, failed_hosts, rr_vars)
         if not host then
             -- Ran out of hosts, break out of the loop (go to next pool)
             break
@@ -470,7 +477,7 @@ _M.available_methods.round_robin = function(self, pool, sock)
         else
             -- Mark the host bad and retry
             hosts[idx] = false
-            self:connect_failed(host, pool.id)
+            self:connect_failed(host, poolid)
         end
     until connected
     -- All hosts have failed
@@ -518,7 +525,7 @@ function _M.connect(self, sock)
         end
     end
     -- Didnt find any pools with working hosts, return the last error message
-    return nil, err
+    return nil, "No available upstream hosts"
 end
 
 return _M
