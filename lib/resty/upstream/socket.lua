@@ -197,45 +197,6 @@ function _M.get_priority_index(self)
 end
 
 
-local function _gcd(a,b)
-    -- Tail recursive gcd function
-    if b == 0 then
-        return a
-    else
-        return _gcd(b, a % b)
-    end
-end
-
-
-local function calc_gcd_weight(hosts)
-    -- Calculate the GCD and maximum weight value from a set of hosts
-    local gcd = 0
-    local len = #hosts - 1
-    local max_weight = 0
-    local i = 1
-
-    if len < 1 then
-        return 0, 0
-    end
-
-    repeat
-        local tmp = _gcd(hosts[i].weight, hosts[i+1].weight)
-        if tmp > gcd then
-            gcd = tmp
-        end
-        if hosts[i].weight > max_weight then
-            max_weight = hosts[i].weight
-        end
-        i = i +1
-    until i >= len
-    if hosts[i].weight > max_weight then
-        max_weight = hosts[i+1].weight
-    end
-
-    return gcd, max_weight
-end
-
-
 function _M.save_pools(self, pools)
     self:ctx().pools = pools
     local serialised = json_encode(pools)
