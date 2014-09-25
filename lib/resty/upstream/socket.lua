@@ -368,6 +368,30 @@ function _M.process_failed_hosts(self)
 end
 
 
+function _M.get_host_operational_data(self, poolid, hostid)
+    local op_data = self.operational_data
+    local pool_data = op_data[poolid]
+    if not pool_data then
+        op_data[poolid] = { hosts = {} }
+        pool_data = op_data[poolid]
+    end
+
+    local pool_hosts_data = pool_data['hosts']
+    if not pool_hosts_data then
+        pool_data['hosts'] = {}
+        pool_hosts_data = pool_data['hosts']
+    end
+
+    local host_data = pool_hosts_data[hostid]
+    if not host_data then
+        pool_hosts_data[hostid] = {}
+        host_data = pool_hosts_data[hostid]
+    end
+
+    return host_data
+end
+
+
 function _M.get_failed_hosts(self, poolid)
     local f = self:ctx().failed
     local failed_hosts = f[poolid]
@@ -434,7 +458,7 @@ local function get_round_robin_vars(self, pool)
     local operational_data = self.operational_data
     local pool_data = operational_data[pool.id]
     if not pool_data then
-        operational_data[pool.id] = {}
+        operational_data[pool.id] = { hosts = {}, round_robin = {idx = 0, cw = 0} }
         pool_data = operational_data[pool.id]
     end
 

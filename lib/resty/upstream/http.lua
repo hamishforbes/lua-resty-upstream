@@ -261,13 +261,14 @@ local function _request(self, upstream, httpc, params)
 
     local ssl_opts = self.ssl_opts
     if ssl_opts.ssl then
-        -- TODO: SSL Session reuse
-        local ok, err = httpc:ssl_handshake(nil, ssl_opts.sni_host or ngx.var.host, ssl_opts.ssl_verify)
+        local host_data = upstream:get_host_operational_data(pool.id, host.id)
+        local ok, err = httpc:ssl_handshake(host_data.ssl_session, ssl_opts.sni_host or ngx.var.host, ssl_opts.ssl_verify)
         if not ok then
             ngx_log(ngx_ERR, "SSL Error: ",err)
             failed_request(self, host.id, pool.id)
             return ok, err
         end
+        host_data.ssl_session = ok
     end
 
     httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
