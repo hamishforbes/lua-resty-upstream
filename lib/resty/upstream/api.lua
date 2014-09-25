@@ -42,7 +42,7 @@ local default_host = {
     host = '',
     port = 80,
     up = true,
-    weight = 0,
+    weight = 1,
     failcount = 0,
     lastfail = 0
 }
@@ -176,6 +176,10 @@ function _M.create_pool(self, opts)
         self:unlock_pools()
         return ok, err
     end
+
+    -- Add some operational data per pool
+    self.upstream.operational_data[poolid] = {}
+
     ngx_log(ngx_debug, 'Created pool '..poolid)
 
     local ok, err = self:sort_pools(pools)

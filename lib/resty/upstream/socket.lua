@@ -95,7 +95,9 @@ function _M.new(_, dict_name, id)
         id = id,
         dict = dict,
         dict_name = dict_name,
-        rr_vars = {},
+
+        -- Per worker data
+        operational_data = {},
     }
     -- Create unique dictionary keys for this instance of upstream
     self.pools_key = self.id..'_pools'
@@ -234,16 +236,6 @@ end
 
 
 function _M.save_pools(self, pools)
-    -- Pool has changed, recalculate gcd and max_weight
-    local rr_vars = self.rr_vars
-    for id,pool in pairs(pools) do
-        if not rr_vars[id] then
-            rr_vars[id] = {idx = 0, cw = 0}
-        end
-        local pool_rr = rr_vars[id]
-        pool_rr.gcd, pool_rr.max_weight = calc_gcd_weight(pool.hosts)
-    end
-
     self:ctx().pools = pools
     local serialised = json_encode(pools)
     return self.dict:set(self.pools_key, serialised)
@@ -403,11 +395,11 @@ function _M.connect_failed(self, host, poolid)
 end
 
 
-local function select_weighted_rr_host(hosts, failed_hosts, rr_vars)
-    local idx = rr_vars.idx
-    local cw = rr_vars.cw
-    local gcd = rr_vars.gcd
-    local max_weight = rr_vars.max_weight
+local function select_weighted_rr_host(hosts, failed_hosts, roundrobin_vars)
+    local idx = roundrobin_vars.idx
+    local cw = roundrobin_vars.cw
+    local gcd = roundrobin_vars.gcd
+    local max_weight = roundrobin_vars.max_weight
 
     local hostcount = #hosts
 
@@ -432,7 +424,7 @@ local function select_weighted_rr_host(hosts, failed_hosts, rr_vars)
             host.weight >= cw and
             failed_hosts[host.id] == nil
             then
-                rr_vars.idx, rr_vars.cw = idx, cw
+                roundrobin_vars.idx, roundrobin_vars.cw = idx, cw
                 return host, idx
         end
         iters = iters+1
@@ -441,10 +433,23 @@ local function select_weighted_rr_host(hosts, failed_hosts, rr_vars)
 end
 
 
+local function get_roundrobin_vars(self, pool)
+    local operational_data = self.operational_data
+    local pool_data = operational_data[pool.id]
+    local roundrobin_vars = pool_data["round_robin"]
+    if not roundrobin_vars then
+        pool_data["round_robin"] = {idx = 0, cw = 0}
+        roundrobin_vars = pool_data["round_robin"]
+    end
+
+    roundrobin_vars.gcd, roundrobin_vars.max_weight = calc_gcd_weight(pool.hosts)
+    return roundrobin_vars
+end
+
+
 _M.available_methods.round_robin = function(self, pool, sock)
     local hosts = pool.hosts
     local poolid = pool.id
-    local rr_vars = self.rr_vars[pool.id]
 
     -- Attempt a connection
     if #hosts == 1 then
@@ -458,12 +463,12 @@ _M.available_methods.round_robin = function(self, pool, sock)
     end
 
     local failed_hosts = self:get_failed_hosts(poolid)
+    local roundrobin_vars = get_roundrobin_vars(self, pool)
 
     -- Loop until we run out of hosts or have connected
     local connected, err
     repeat
-
-        local host, idx = select_weighted_rr_host(hosts, failed_hosts, rr_vars)
+        local host, idx = select_weighted_rr_host(hosts, failed_hosts, roundrobin_vars)
         if not host then
             -- Ran out of hosts, break out of the loop (go to next pool)
             break
