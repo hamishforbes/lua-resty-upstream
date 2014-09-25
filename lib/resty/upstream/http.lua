@@ -290,7 +290,7 @@ function _M.request(self, params)
     repeat
         local res, err = _request(self, upstream, httpc, params)
         if res then
-            self.conn_info = err
+            self.upstream:ctx().conn_info = err
             return res, err
         else
             -- Either connect or http failed to all available hosts
@@ -310,7 +310,7 @@ end
 
 
 function _M.set_keepalive(self)
-    local pool = self.conn_info.pool
+    local pool = self.upstream:ctx().conn_info.pool
     local keepalive_timeout = pool.keepalive_timeout or defaults.keepalive_timeout
     local keepalive_pool    = pool.keepalive_pool    or defaults.keepalive_pool
 

@@ -379,10 +379,9 @@ function _M.get_failed_hosts(self, poolid)
 end
 
 
-function _M.connect_failed(self, host, poolid)
+function _M.connect_failed(self, host, poolid, failed_hosts)
     -- Flag host as failed
     local hostid = host.id
-    local failed_hosts = self:get_failed_hosts(poolid)
     failed_hosts[hostid] = true
     ngx_log(ngx_ERR,
         str_format('Failed connecting to Host "%s" (%s:%d) from pool "%s"',
@@ -395,15 +394,14 @@ function _M.connect_failed(self, host, poolid)
 end
 
 
-local function select_weighted_rr_host(hosts, failed_hosts, roundrobin_vars)
-    local idx = roundrobin_vars.idx
-    local cw = roundrobin_vars.cw
-    local gcd = roundrobin_vars.gcd
-    local max_weight = roundrobin_vars.max_weight
+local function select_weighted_rr_host(hosts, failed_hosts, round_robin_vars)
+    local idx = round_robin_vars.idx
+    local cw = round_robin_vars.cw
+    local gcd = round_robin_vars.gcd
+    local max_weight = round_robin_vars.max_weight
 
     local hostcount = #hosts
-
-    local iters = 0
+    local failed_iters = 0
     repeat
         idx = idx +1
         if idx > hostcount then
@@ -419,31 +417,35 @@ local function select_weighted_rr_host(hosts, failed_hosts, roundrobin_vars)
             end
         end
         local host = hosts[idx]
-        if  host ~= false and
-            host.up == true and
-            host.weight >= cw and
-            failed_hosts[host.id] == nil
-            then
-                roundrobin_vars.idx, roundrobin_vars.cw = idx, cw
+        if host.weight >= cw then
+            if failed_hosts[host.id] == nil and host.up == true then
+                round_robin_vars.idx, round_robin_vars.cw = idx, cw
                 return host, idx
+            else
+                failed_iters = failed_iters+1
+            end
         end
-        iters = iters+1
-    until iters > hostcount -- Checked every host, must all be down
+    until failed_iters > hostcount -- Checked every host, must all be down
     return
 end
 
 
-local function get_roundrobin_vars(self, pool)
+local function get_round_robin_vars(self, pool)
     local operational_data = self.operational_data
     local pool_data = operational_data[pool.id]
-    local roundrobin_vars = pool_data["round_robin"]
-    if not roundrobin_vars then
-        pool_data["round_robin"] = {idx = 0, cw = 0}
-        roundrobin_vars = pool_data["round_robin"]
+    if not pool_data then
+        operational_data[pool.id] = {}
+        pool_data = operational_data[pool.id]
     end
 
-    roundrobin_vars.gcd, roundrobin_vars.max_weight = calc_gcd_weight(pool.hosts)
-    return roundrobin_vars
+    local round_robin_vars = pool_data["round_robin"]
+    if not round_robin_vars then
+        pool_data["round_robin"] = {idx = 0, cw = 0}
+        round_robin_vars = pool_data["round_robin"]
+    end
+
+    round_robin_vars.gcd, round_robin_vars.max_weight = calc_gcd_weight(pool.hosts)
+    return round_robin_vars
 end
 
 
@@ -457,18 +459,18 @@ _M.available_methods.round_robin = function(self, pool, sock)
         local host = hosts[1]
         local connected, err = sock:connect(host.host, host.port)
         if not connected then
-            self:connect_failed(host, poolid)
+            self:connect_failed(host, poolid, self:get_failed_hosts(poolid))
         end
         return connected, sock, host, err
     end
 
     local failed_hosts = self:get_failed_hosts(poolid)
-    local roundrobin_vars = get_roundrobin_vars(self, pool)
+    local round_robin_vars = get_round_robin_vars(self, pool)
 
     -- Loop until we run out of hosts or have connected
     local connected, err
     repeat
-        local host, idx = select_weighted_rr_host(hosts, failed_hosts, roundrobin_vars)
+        local host, idx = select_weighted_rr_host(hosts, failed_hosts, round_robin_vars)
         if not host then
             -- Ran out of hosts, break out of the loop (go to next pool)
             break
@@ -481,8 +483,7 @@ _M.available_methods.round_robin = function(self, pool, sock)
             return connected, sock, host, err
         else
             -- Mark the host bad and retry
-            hosts[idx] = false
-            self:connect_failed(host, poolid)
+            self:connect_failed(host, poolid, failed_hosts)
         end
     until connected
     -- All hosts have failed
