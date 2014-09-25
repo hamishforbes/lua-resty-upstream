@@ -425,8 +425,9 @@ _M.available_methods.round_robin = function(self, pool, sock)
     local best_operational_data
     local all_hosts = pool.hosts
     local poolid = pool.id
+    local hostcount = #all_hosts
 
-    if #all_hosts == 1 then
+    if hostcount == 1 then
         -- Don't bother trying to balance between 1 host
         local host = all_hosts[1]
         local connected, err = sock:connect(host.host, host.port)
@@ -439,8 +440,9 @@ _M.available_methods.round_robin = function(self, pool, sock)
     local failed_hosts = self:get_failed_hosts(poolid)
 
     -- Loop until we run out of hosts or have connected
+    local failed_iter = 0
     repeat
-        for i=1, #all_hosts do
+        for i=1, hostcount do
             local host = all_hosts[i]
             local hostid = host.id
 
@@ -483,10 +485,11 @@ _M.available_methods.round_robin = function(self, pool, sock)
         if connected then
             return connected, sock, best, err
         else
+            failed_iter = failed_iter+1
             self:connect_failed(best, poolid, failed_hosts)
         end
 
-    until connected
+    until connected or failed_iter == hostcount
 
     return nil, sock, {}, err
 end
