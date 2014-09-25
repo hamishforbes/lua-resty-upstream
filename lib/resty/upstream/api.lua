@@ -248,6 +248,7 @@ function _M.set_weight(self, poolid, hostid, weight)
         return nil, 'Host not found'
     end
     pool.hosts[host_idx].weight = weight
+    self.upstream.operational_data[poolid][hostid].effective_weight = weight
 
     ngx_log(ngx_debug,
         str_format('Host weight "%s" in "%s" set to %d', hostid, poolid, weight)
@@ -306,6 +307,14 @@ function _M.add_host(self, poolid, host)
     new_host.id = hostid
 
     pool.hosts[#pool.hosts+1] = new_host
+
+    -- adding some operational data about host
+    -- assumes 'default_host' has a .weight
+    local operational_host_data = {
+        current_weight = 0,
+        effective_weight = new_host.weight,
+    }
+    self.upstream.operational_data[poolid][hostid] = operational_host_data
 
     ngx_log(ngx_debug, str_format('Host "%s" added to  "%s"', hostid, poolid))
     local ok, err = self:save_pools(pools)
@@ -377,6 +386,9 @@ function _M.down_host(self, poolid, hostid)
             poolid
         )
     )
+
+    -- remove from operational data.
+    self.upstream.operational_data[poolid][hostid] = nil
 
     local ok, err = self:save_pools(pools)
     self:unlock_pools()

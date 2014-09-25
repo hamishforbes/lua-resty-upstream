@@ -17,6 +17,7 @@ local phase = ngx.get_phase
 local cjson = require('cjson')
 local json_encode = cjson.encode
 local json_decode = cjson.decode
+local floor = math.floor
 local resty_lock = require('resty.lock')
 
 local _M = {
@@ -381,8 +382,29 @@ end
 
 function _M.connect_failed(self, host, poolid, failed_hosts)
     -- Flag host as failed
+    local pools = self:get_pools()
+    local pool = pools[poolid]
+    local max_fails = pool.max_fails
     local hostid = host.id
+
+    local operational_host_data = self.operational_data[poolid][hostid]
+    if max_fails > 0 then
+        -- Inspired from Nginx :
+        -- (ngx_http_upstream_round_robin.c:ngx_http_upstream_free_round_robin_peer)
+        -- reduce the effective weight of this peer
+        -- best->effective_weight -= best->weight / pool->max_fails;
+
+        operational_host_data.effective_weight = floor(
+            operational_host_data.effective_weight -
+                (host.weight / max_fails))
+    end
+
+    if operational_host_data.effective_weight < 0 then
+        operational_host_data.effective_weight = 0
+    end
+
     failed_hosts[hostid] = true
+
     ngx_log(ngx_ERR,
         str_format('Failed connecting to Host "%s" (%s:%d) from pool "%s"',
             hostid,
@@ -394,69 +416,19 @@ function _M.connect_failed(self, host, poolid, failed_hosts)
 end
 
 
-local function select_weighted_rr_host(hosts, failed_hosts, round_robin_vars)
-    local idx = round_robin_vars.idx
-    local cw = round_robin_vars.cw
-    local gcd = round_robin_vars.gcd
-    local max_weight = round_robin_vars.max_weight
-
-    local hostcount = #hosts
-    local failed_iters = 0
-    repeat
-        idx = idx +1
-        if idx > hostcount then
-            idx = 1
-        end
-        if idx == 1 then
-            cw = cw - gcd
-            if cw <= 0 then
-                cw = max_weight
-                if cw == 0 then
-                    return nil
-                end
-            end
-        end
-        local host = hosts[idx]
-        if host.weight >= cw then
-            if failed_hosts[host.id] == nil and host.up == true then
-                round_robin_vars.idx, round_robin_vars.cw = idx, cw
-                return host, idx
-            else
-                failed_iters = failed_iters+1
-            end
-        end
-    until failed_iters > hostcount -- Checked every host, must all be down
-    return
-end
-
-
-local function get_round_robin_vars(self, pool)
-    local operational_data = self.operational_data
-    local pool_data = operational_data[pool.id]
-    if not pool_data then
-        operational_data[pool.id] = {}
-        pool_data = operational_data[pool.id]
-    end
-
-    local round_robin_vars = pool_data["round_robin"]
-    if not round_robin_vars then
-        pool_data["round_robin"] = {idx = 0, cw = 0}
-        round_robin_vars = pool_data["round_robin"]
-    end
-
-    round_robin_vars.gcd, round_robin_vars.max_weight = calc_gcd_weight(pool.hosts)
-    return round_robin_vars
-end
-
 
 _M.available_methods.round_robin = function(self, pool, sock)
-    local hosts = pool.hosts
+    local connected, err
+    local best
+    local total = 0
+    local best_weight
+    local best_operational_data
+    local all_hosts = pool.hosts
     local poolid = pool.id
 
-    -- Attempt a connection
-    if #hosts == 1 then
+    if #all_hosts == 1 then
         -- Don't bother trying to balance between 1 host
-        local host = hosts[1]
+        local host = all_hosts[1]
         local connected, err = sock:connect(host.host, host.port)
         if not connected then
             self:connect_failed(host, poolid, self:get_failed_hosts(poolid))
@@ -465,28 +437,57 @@ _M.available_methods.round_robin = function(self, pool, sock)
     end
 
     local failed_hosts = self:get_failed_hosts(poolid)
-    local round_robin_vars = get_round_robin_vars(self, pool)
 
     -- Loop until we run out of hosts or have connected
-    local connected, err
     repeat
-        local host, idx = select_weighted_rr_host(hosts, failed_hosts, round_robin_vars)
-        if not host then
-            -- Ran out of hosts, break out of the loop (go to next pool)
+        for i=1, #all_hosts do
+            local host = all_hosts[i]
+            local hostid = host.id
+
+            if host.up and not failed_hosts[hostid] then
+                -- host is up
+                local operational_host_data = self.operational_data[poolid][hostid]
+
+                -- Inspired from Nginx:
+                -- (ngx_http_upstream_round_robin.c:ngx_http_upstream_get_round_robin_peer)
+                local current_weight = operational_host_data.current_weight
+                    + operational_host_data.effective_weight
+                operational_host_data.current_weight = current_weight
+
+                total = total + operational_host_data.effective_weight
+
+                if operational_host_data.effective_weight < host.weight then
+                    operational_host_data.effective_weight =
+                        operational_host_data.effective_weight + 1
+                end
+
+                if not best or current_weight > best_weight then
+                    best = host
+                    best_operational_data = operational_host_data
+                    best_weight = current_weight
+                end
+            end
+        end
+
+        if not best then
+            -- Run out of hosts, break out of the loop (go to next pool)
             break
         end
 
-        -- Try connecting to the selected host
-        connected, err = sock:connect(host.host, host.port)
+        best_operational_data.current_weight =
+            best_operational_data.current_weight - total
+
+        -- Try connecting to the winner
+        connected, err = sock:connect(best.host, best.port)
 
         if connected then
-            return connected, sock, host, err
+            return connected, sock, best, err
         else
-            -- Mark the host bad and retry
-            self:connect_failed(host, poolid, failed_hosts)
+            self:connect_failed(best, poolid, failed_hosts)
         end
+
     until connected
-    -- All hosts have failed
+
     return nil, sock, {}, err
 end
 
