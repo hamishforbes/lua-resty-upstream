@@ -31,7 +31,7 @@ local mt = { __index = _M }
 local background_thread
 background_thread = function(premature, self)
     if premature then
-        ngx_log(ngx_DEBUG, ngx_worker_pid(), " background thread prematurely exiting")
+        self:log(ngx_DEBUG, ngx_worker_pid(), " background thread prematurely exiting")
         return
     end
     -- Call ourselves on a timer again
@@ -46,6 +46,10 @@ background_thread = function(premature, self)
     self:release_background_lock()
 end
 
+function _M.log(self, level, ...)
+    ngx_log(level, "Upstream '", self.id,"': ", ...)
+end
+
 
 function _M.get_background_lock(self)
     local pid = ngx_worker_pid()
@@ -57,7 +61,7 @@ function _M.get_background_lock(self)
     if err == 'exists' then
         return false
     else
-        ngx_log(ngx_DEBUG, "Could not add key in ", pid)
+        self:log(ngx_DEBUG, "Could not add background lock key in pid #", pid)
         return false
     end
 end
@@ -67,13 +71,13 @@ function _M.release_background_lock(self)
     local dict = self.dict
     local pid, err = dict:get(self.background_flag)
     if not pid then
-        ngx_log(ngx_ERR, "Failed to get key '", self.background_flag, "': ", err)
+        self:log(ngx_ERR, "Failed to get key '", self.background_flag, "': ", err)
         return
     end
     if pid == ngx_worker_pid() then
         local ok, err = dict:delete(self.background_flag)
         if not ok then
-            ngx_log(ngx_ERR, "Failed to delete key '", self.background_flag, "': ", err)
+            self:log(ngx_ERR, "Failed to delete key '", self.background_flag, "': ", err)
         end
     end
 end
@@ -166,7 +170,7 @@ function _M.get_locked_pools(self)
         local pools = json_decode(pool_str)
         return pools
     else
-        ngx_log(ngx_ERR, str_format("Failed to lock pools for '%s': %s", self.id, err))
+        self:log(ngx_ERR, "Failed to lock pools: ", err)
     end
 
     return ok, err
@@ -180,7 +184,7 @@ function _M.unlock_pools(self)
     local lock = get_lock_obj(self)
     local ok, err = lock:unlock(self.lock_key)
     if not ok then
-        ngx_log(ngx_ERR, str_format("Failed to release pools lock for '%s': %s", self.id, err))
+        self:log(ngx_ERR, "Failed to release pools lock: ", err)
     end
     return ok, err
 end
@@ -236,6 +240,7 @@ end
 
 
 function _M.save_pools(self, pools)
+    pools = pools or {}
     self:ctx().pools = pools
     local serialised = json_encode(pools)
     return self.dict:set(self.pools_key, serialised)
@@ -265,7 +270,7 @@ end
 function _M.init_background_thread(self)
     local ok, err = ngx_timer_at(1, background_thread, self)
     if not ok then
-        ngx_log(ngx_ERR, "Failed to start background thread: "..err)
+        self:log(ngx_ERR, "Failed to start background thread: ", err)
     end
 end
 
@@ -283,7 +288,7 @@ function _M._background_func(self)
         for k, host in ipairs(pool.hosts) do
             -- Reset any hosts past their timeout
              if host.lastfail ~= 0 and (host.lastfail + failed_timeout) < now then
-                ngx_log(ngx_INFO,
+                self:log(ngx_INFO,
                     str_format('Host "%s" in Pool "%s" is up', host.id, poolid)
                 )
                 host.up = true
@@ -298,7 +303,7 @@ function _M._background_func(self)
     if changed then
         ok, err = self:save_pools(pools)
         if not ok then
-            ngx_log(ngx_ERR, "Error saving pools for upstream ", self.id, ": ", err)
+            self:log(ngx_ERR, "Error saving pools: ", err)
         end
     end
     self:unlock_pools()
@@ -342,7 +347,7 @@ function _M._process_failed_hosts(premature, self, ctx)
             host.failcount = host.failcount + 1
             if host.failcount >= max_fails and host.up == true then
                 host.up = false
-                ngx_log(ngx_ERR,
+                self:log(ngx_ERR,
                     str_format('Host "%s" in Pool "%s" is down', host.id, poolid)
                 )
             end
@@ -353,7 +358,7 @@ function _M._process_failed_hosts(premature, self, ctx)
     if changed then
         ok, err = self:save_pools(pools)
         if not ok then
-            ngx_log(ngx_ERR, "Error saving pools for upstream ", self.id, " ", err)
+            self:log(ngx_ERR, "Error saving pools: ", err)
         end
     end
 
@@ -407,7 +412,7 @@ function _M.connect_failed(self, host, poolid, failed_hosts)
     -- Flag host as failed
     local hostid = host.id
     failed_hosts[hostid] = true
-    ngx_log(ngx_ERR,
+    self:log(ngx_ERR,
         str_format('Failed connecting to Host "%s" (%s:%d) from pool "%s"',
             hostid,
             host.host,
@@ -549,7 +554,7 @@ function _M.connect(self, sock)
 
             if connected then
                 -- Return connected socket!
-                ngx_log(ngx_DEBUG, 'connected to '..host.id)
+                self:log(ngx_DEBUG, 'Connected to ', host.id)
                 return sock, {host = host, pool = pool}
             end
         end
