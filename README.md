@@ -64,6 +64,9 @@ init_by_lua '
     upstream_api = require("resty.upstream.api")
 
     upstream, configured = upstream_socket:new("my_upstream_dict")
+    if not upstream then
+        error(configured)
+    end
     api = upstream_api:new(upstream)
 
     if not configured then -- Only reconfigure on start, shared mem persists across a HUP
@@ -321,6 +324,14 @@ Returns a new http upstream object using the provided upstream object.
  * `ssl` set to `true` to enable SSL Handshaking, default `false`
  * `ssl_verify` set to `false` to disable SSL certificate verification, default `true`
  * `sni_host` a string to use as the sni hostname, default is the request's Host header
+
+ ```lua
+https_upstream = Upstream_HTTP:new(upstream_ssl, {
+        ssl = true,
+        ssl_verify = true,
+        sni_host = "foo.example.com"
+    })
+ ```
 
 ### init_background_thread
 `syntax: ok, err = upstream_http:init_background_thread()`
