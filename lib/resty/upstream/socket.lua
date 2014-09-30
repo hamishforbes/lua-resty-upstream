@@ -46,6 +46,7 @@ background_thread = function(premature, self)
     self:release_background_lock()
 end
 
+
 function _M.log(self, level, ...)
     ngx_log(level, "Upstream '", self.id,"': ", ...)
 end
@@ -232,7 +233,7 @@ local function calc_gcd_weight(hosts)
         i = i +1
     until i >= len
     if hosts[i].weight > max_weight then
-        max_weight = hosts[i+1].weight
+        max_weight = hosts[i].weight
     end
 
     return gcd, max_weight
