@@ -306,10 +306,10 @@ function _M.request(self, params)
             if err == "No available upstream hosts" then
                 if prev_err then
                     -- Got a connection at some point but bad HTTP
-                    return nil, {err = prev_err, status = 502}
+                    return nil, prev_err, 502
                 else
                     -- No connections at all
-                    return nil, {err = err, status = 504}
+                    return nil, err, 504
                 end
             end
             prev_err = err

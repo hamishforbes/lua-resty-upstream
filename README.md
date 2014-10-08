@@ -341,15 +341,29 @@ Initialises the background thread, should be called in `init_worker_by_lua`.
 Do *not* call the `init_background_thread` method in `upstream.socket` if using the `upstream.http` background thread
 
 ### request
-`syntax: res, conn_info = upstream_api:request(params)`
+`syntax: res, err_or_conn_info, status? = upstream_api:request(params)`
 
 Takes the same parameters as lua-resty-http's [request](https://github.com/pintsized/lua-resty-http#request) method.
 
 On a successful request returns the lua-resty-http object and a table containing the connected host and pool.
 
-If the request failed returns nil and a table describing the error and suggested http status code
+If the request failed returns nil, the error and a suggested http status code
+
 ```lua
-{ err = error_message, status = (502 or 504) }
+local ok, err, status = upstream_http:request({
+        path = "/helloworld",
+        headers = {
+            ["Host"] = "example.com",
+        }
+    })
+if not ok then
+    ngx.status = status
+    ngx.say(err)
+    ngx.exit(status)
+else
+    local host = err.host
+    local pool = err.pool
+end
 ```
 
 ### set_keepalive
