@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (2);
+plan tests => 6;
 
 my $pwd = cwd();
 
@@ -47,6 +47,59 @@ __DATA__
         -- Good hosts
             test_api:add_host("secondary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
             test_api:add_host("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
+
+            local sock, err = upstream:connect()
+            if not sock then
+                ngx.log(ngx.ERR, err)
+                ngx.say(err)
+            else
+                sock:close()
+                ngx.say(err.pool.id)
+            end
+        ';
+    }
+--- request
+GET /a
+--- response_body
+secondary
+
+=== TEST 2: Failover to secondary pool, with 1 host in primary
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = /a {
+        content_by_lua '
+        -- Bad hosts
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
+        -- Good hosts
+            test_api:add_host("secondary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
+            test_api:add_host("secondary", { id="b", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
+
+            local sock, err = upstream:connect()
+            if not sock then
+                ngx.log(ngx.ERR, err)
+                ngx.say(err)
+            else
+                sock:close()
+                ngx.say(err.pool.id)
+            end
+        ';
+    }
+--- request
+GET /a
+--- response_body
+secondary
+
+=== TEST 3: Failover to secondary pool, with 1 host in both
+--- http_config eval: $::HttpConfig
+--- log_level: debug
+--- config
+    location = /a {
+        content_by_lua '
+        -- Bad hosts
+            test_api:add_host("primary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port+1, weight = 10 })
+        -- Good hosts
+            test_api:add_host("secondary", { id="a", host = ngx.var.server_addr, port = ngx.var.server_port, weight = 10 })
 
             local sock, err = upstream:connect()
             if not sock then

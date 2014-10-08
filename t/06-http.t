@@ -50,15 +50,15 @@ __DATA__
 --- config
     location = /a {
         content_by_lua '
-            local res, conn_info = http:request({
+            local res, err, status = http:request({
                 method = "GET",
                 path = "/test",
                 headers = ngx.req.get_headers(),
             })
 
             if not res then
-                ngx.status = conn_info.status
-                ngx.say(conn_info.err)
+                ngx.status = status
+                ngx.say(err)
                 return ngx.exit(ngx.status)
             end
 
@@ -88,20 +88,23 @@ response
 --- config
     location = /a {
         content_by_lua '
-            local res, conn_info = http:request({
+            local res, err, status = http:request({
                 method = "GET",
                 path = "/test",
                 headers = ngx.req.get_headers(),
             })
 
             if not res then
-                ngx.status = conn_info.status
-                ngx.say(conn_info.err)
+                ngx.status = status
+                ngx.say(err)
                 return ngx.exit(ngx.status)
             end
 
             local body = res:read_body()
             ngx.print(body)
+            local host, pool = err.host, err.pool
+            ngx.say(host.id)
+            ngx.say(pool.id)
 
         ';
     }
@@ -123,6 +126,8 @@ response
 GET /a
 --- response_body
 response
+b
+secondary
 
 === TEST 3: No connections returns 504
 --- http_config eval
@@ -137,15 +142,15 @@ response
 --- config
     location = /a {
         content_by_lua '
-            local res, conn_info = http:request({
+            local res, err, status = http:request({
                 method = "GET",
                 path = "/test",
                 headers = ngx.req.get_headers(),
             })
 
             if not res then
-                ngx.status = conn_info.status
-                ngx.say(conn_info.err)
+                ngx.status = status
+                ngx.say(err)
                 return ngx.exit(ngx.status)
             end
 
@@ -172,15 +177,15 @@ GET /a
 --- config
     location = /a {
         content_by_lua '
-            local res, conn_info = http:request({
+            local res, err, status = http:request({
                 method = "GET",
                 path = "/test",
                 headers = ngx.req.get_headers(),
             })
 
             if not res then
-                ngx.status = conn_info.status
-                ngx.say(conn_info.err)
+                ngx.status = status
+                ngx.say(err)
                 return ngx.exit(ngx.status)
             end
 
@@ -213,15 +218,15 @@ GET /a
 --- config
     location = /a {
         content_by_lua '
-            local res, conn_info = http:request({
+            local res, err, status = http:request({
                 method = "GET",
                 path = "/test",
                 headers = ngx.req.get_headers(),
             })
 
             if not res then
-                ngx.status = conn_info.status
-                ngx.say(conn_info.err)
+                ngx.status = status
+                ngx.say(err)
                 return ngx.exit(ngx.status)
             end
 
@@ -253,15 +258,15 @@ GET /a
 --- config
     location = /a {
         content_by_lua '
-           local res, conn_info = http:request({
+           local res, err, status = http:request({
                 method = "GET",
                 path = "/test",
                 --headers = ngx.req.get_headers(),
             })
 
             if not res then
-                ngx.status = conn_info.status
-                ngx.say(conn_info.err)
+                ngx.status = status
+                ngx.say(err)
                 return ngx.exit(ngx.status)
             end
 
@@ -275,7 +280,7 @@ GET /a
 
             ngx.sleep(0.1)
 
-            local res, conn_info = http:request({
+            local res, err = http:request({
                 method = "GET",
                 path = "/test",
                 headers = ngx.req.get_headers(),

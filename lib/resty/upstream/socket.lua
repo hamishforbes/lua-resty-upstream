@@ -483,10 +483,15 @@ _M.available_methods.round_robin = function(self, pool, sock)
     local hosts = pool.hosts
     local poolid = pool.id
 
+    local failed_hosts = self:get_failed_hosts(poolid)
+
     -- Attempt a connection
     if #hosts == 1 then
         -- Don't bother trying to balance between 1 host
         local host = hosts[1]
+        if failed_hosts[host.id] then
+            return nil, sock, {}, nil
+        end
         local connected, err = sock:connect(host.host, host.port)
         if not connected then
             self:connect_failed(host, poolid, self:get_failed_hosts(poolid))
@@ -494,7 +499,6 @@ _M.available_methods.round_robin = function(self, pool, sock)
         return connected, sock, host, err
     end
 
-    local failed_hosts = self:get_failed_hosts(poolid)
     local round_robin_vars = get_round_robin_vars(self, pool)
 
     -- Loop until we run out of hosts or have connected
@@ -544,7 +548,6 @@ function _M.connect(self, sock)
     -- Loop over pools in priority order
     for _, poolid in ipairs(priority_index) do
         local pool = pools[poolid]
-
         if pool.up then
             pool.id = poolid
             -- Set connection timeout
@@ -555,7 +558,8 @@ function _M.connect(self, sock)
 
             if connected then
                 -- Return connected socket!
-                self:log(ngx_DEBUG, 'Connected to ', host.id)
+                self:log(ngx_DEBUG, str_format("Connected to host '%s' (%s:%i) in pool '%s'",
+                    host.id, host.host, host.port, poolid))
                 return sock, {host = host, pool = pool}
             end
         end
