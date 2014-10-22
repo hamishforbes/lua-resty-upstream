@@ -77,6 +77,9 @@ local function http_check_request(self, httpc, params)
                 req_params[k] = params[k]
             end
         end
+        if not req_params['headers'] or not req_params['headers']["User-Agent"] then
+            req_params['headers']["User-Agent"] = check_defaults['headers']["User-Agent"]
+        end
     end
 
     local res, err = httpc:request(req_params)
@@ -267,6 +270,7 @@ local function _request(self, upstream, httpc, params)
     local pool = conn_info.pool or {}
 
     local ssl_opts = self.ssl_opts
+
     if ssl_opts.ssl then
         local host_data = upstream:get_host_operational_data(pool.id, host.id)
         local ok, err = httpc:ssl_handshake(host_data.ssl_session, ssl_opts.sni_host or ngx.var.host, ssl_opts.ssl_verify)
