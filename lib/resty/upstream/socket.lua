@@ -494,7 +494,7 @@ _M.available_methods.round_robin = function(self, pool, sock)
         end
         local connected, err = sock:connect(host.host, host.port)
         if not connected then
-            self:connect_failed(host, poolid, self:get_failed_hosts(poolid))
+            self:connect_failed(host, poolid, failed_hosts)
         end
         return connected, sock, host, err
     end
