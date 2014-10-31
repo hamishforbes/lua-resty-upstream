@@ -299,6 +299,7 @@ function _M.request(self, params)
     local httpc = self:httpc()
     local upstream = self.upstream
 
+    local body_reusable = (type(params.body) ~= 'function')
     local prev_err
     repeat
         local res, err = _request(self, upstream, httpc, params)
@@ -307,10 +308,13 @@ function _M.request(self, params)
             return res, err
         else
             -- Either connect or http failed to all available hosts
-            if err == "No available upstream hosts" then
+            if err == "No available upstream hosts" or not body_reusable then
                 if prev_err then
                     -- Got a connection at some point but bad HTTP
                     return nil, prev_err, 502
+                elseif not body_reusable then
+                    -- Bad HTTP response but can't resend the body another host
+                    return nil, err, 502
                 else
                     -- No connections at all
                     return nil, err, 504

@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * 16;
+plan tests => repeat_each() * 18;
 
 my $pwd = cwd();
 
@@ -446,3 +446,55 @@ GET /foo
 --- request
 GET /foo
 --- error_code: 200
+
+
+=== TEST 11: Do not retry with streamed request body
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 10 })
+            test_api:add_host("secondary", { id="b", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 10 })
+    ';
+}
+--- log_level: debug
+--- config
+    location = /a {
+        content_by_lua '
+            local client_body_reader, err = http:get_client_body_reader()
+            local res, err, status = http:request({
+                method = ngx.req.get_method(),
+                path = "/test",
+                body = client_body_reader,
+                headers = ngx.req.get_headers(),
+            })
+
+            if not res then
+                ngx.status = status
+                ngx.say(err)
+                return ngx.exit(status)
+            end
+
+            ngx.say("Fail")
+
+        ';
+    }
+    location = /test {
+        content_by_lua '
+            local first = ngx.shared.test_upstream:get("first_flag")
+
+            if not first then
+                ngx.shared.test_upstream:set("first_flag", true)
+                ngx.status = 500
+                return ngx.exit(500)
+            end
+
+            ngx.say("response")
+        ';
+    }
+--- request
+POST /a
+Hello World
+--- error_code: 502
+--- response_body
+500
