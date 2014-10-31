@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * 11;
+plan tests => repeat_each() * 15;
 
 my $pwd = cwd();
 
@@ -237,3 +237,32 @@ GET /
 GET /
 --- error_code: 200
 
+=== TEST 7: Do not attempt connection to single host which is down
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+        test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1 })
+    ';
+}
+--- log_level: debug
+--- config
+    location = / {
+        content_by_lua '
+            test_api:down_host("primary", "a")
+
+            local ok, err = upstream:connect()
+            if not ok then
+                ngx.say("OK")
+            else
+                ngx.say(cjson.encode(err))
+            end
+        ';
+    }
+--- request
+GET /
+--- no_error_log
+[error]
+[warn]
+--- response_body
+OK

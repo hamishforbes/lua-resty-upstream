@@ -489,7 +489,7 @@ _M.available_methods.round_robin = function(self, pool, sock)
     if #hosts == 1 then
         -- Don't bother trying to balance between 1 host
         local host = hosts[1]
-        if failed_hosts[host.id] then
+        if host.up == false or failed_hosts[host.id] then
             return nil, sock, {}, nil
         end
         local connected, err = sock:connect(host.host, host.port)
