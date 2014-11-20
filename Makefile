@@ -10,6 +10,11 @@ TEST_FILE ?= t
 
 all: ;
 
+
+install: all
+	$(INSTALL) -d $(DESTDIR)/$(LUA_LIB_DIR)/resty/upstream
+	$(INSTALL) lib/resty/upstream/*.lua $(DESTDIR)/$(LUA_LIB_DIR)/resty/upstream
+
 leak: all
 	TEST_NGINX_CHECK_LEAK=1	TEST_NGINX_NO_SHUFFLE=1 PATH=$(OPENRESTY_PREFIX)/nginx/sbin:$$PATH prove -I../test-nginx/lib -r $(TEST_FILE)
 
