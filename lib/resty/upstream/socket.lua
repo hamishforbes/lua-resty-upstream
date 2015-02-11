@@ -28,6 +28,11 @@ local _M = {
 local mt = { __index = _M }
 
 
+local event_types = {
+    host_up = true,
+    host_down = true,
+}
+
 local background_thread
 background_thread = function(premature, self)
     if premature then
@@ -100,6 +105,7 @@ function _M.new(_, dict_name, id)
         id = id,
         dict = dict,
         dict_name = dict_name,
+        listeners = {},
 
         -- Per worker data
         operational_data = {},
@@ -117,6 +123,38 @@ function _M.new(_, dict_name, id)
     end
 
     return setmetatable(self, mt), configured
+end
+
+
+function _M.bind(self, event, func)
+    if not event_types[event] then
+        return nil, "Event not found"
+    end
+    if type(func) ~= 'function' then
+        return nil, "Can only bind a function"
+    end
+
+    local listeners = self.listeners[event]
+    if not listeners then
+        self.listeners[event] = {}
+        listeners = self.listeners[event]
+    end
+    tbl_insert(listeners, func)
+    return true
+end
+
+
+local function emit(self, event, data)
+    local listeners = self.listeners[event]
+    if not listeners then
+        return
+    end
+    for _, func in ipairs(listeners) do
+        local ok, err = pcall(func,data)
+        if not ok then
+            self:log(ngx_ERR, "Error running listener, event '", event,"': ", err)
+        end
+    end
 end
 
 
@@ -289,13 +327,15 @@ function _M._background_func(self)
         for k, host in ipairs(pool.hosts) do
             -- Reset any hosts past their timeout
              if host.lastfail ~= 0 and (host.lastfail + failed_timeout) < now then
-                self:log(ngx_INFO,
-                    str_format('Host "%s" in Pool "%s" is up', host.id, poolid)
-                )
                 host.up = true
                 host.failcount = 0
                 host.lastfail = 0
                 changed = true
+                self:log(ngx_INFO,
+                    str_format('Host "%s" in Pool "%s" is up', host.id, poolid)
+                )
+                pool.id = poolid
+                emit(self, "host_up", {host = host, pool = pool})
             end
         end
     end
@@ -351,6 +391,8 @@ function _M._process_failed_hosts(premature, self, ctx)
                 self:log(ngx_ERR,
                     str_format('Host "%s" in Pool "%s" is down', host.id, poolid)
                 )
+                pool.id = poolid
+                emit(self, "host_down", {host = host, pool = pool})
             end
         end
     end
