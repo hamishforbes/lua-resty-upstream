@@ -14,6 +14,7 @@ Upstream connection load balancing and failover module
     * [get_pools](#get_pools)
     * [save_pools](#save_pools)
     * [sort_pools](#sort_pools)
+    * [bind](#bind)
 * [upstream.api](#upstream.api)
     * [new](#new-1)
     * [set_method](#set_method)
@@ -208,6 +209,30 @@ Saves a table of pools to the shared dictionary, `pools` must be in the same for
 `syntax: ok, err = upstream:sort_pools(pools)`
 
 Generates a priority order in the shared dictionary based on the table of pools provided
+
+### bind
+`syntax: ok, err = upstream:bind(event, func)`
+
+Bind a function to be called when events occur. `func` should expect 1 argument containing event data.
+
+Returns `true` on a successful bind or `nil` and an error message on failure.
+
+```
+local function host_down_handler(event)
+    ngx.log(ngx.ERR, "Host: ", event.host.host, ":", event.host.port, " in pool '", event.pool.id,'" is down!')
+end
+local ok, err = upstream:bind('host_down', host_down_handler)
+```
+
+#### Event: host_up
+
+Fired when a host changes status from down to up.
+Event data is a table containing the affected host and pool.
+
+#### Event: host_down
+
+Fired when a host changes status from up to down.
+Event data is a table containing the affected host and pool.
 
 
 # upstream.api
