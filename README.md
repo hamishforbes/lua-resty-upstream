@@ -217,7 +217,7 @@ Bind a function to be called when events occur. `func` should expect 1 argument 
 
 Returns `true` on a successful bind or `nil` and an error message on failure.
 
-```
+```lua
 local function host_down_handler(event)
     ngx.log(ngx.ERR, "Host: ", event.host.host, ":", event.host.port, " in pool '", event.pool.id,'" is down!')
 end
