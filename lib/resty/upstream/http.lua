@@ -27,20 +27,19 @@ local defaults = {
     keepalive_pool = 128
 }
 
-local check_defaults = {
-    method = "GET",
-    path = "/",
-    headers = {
-        ["User-Agent"] = "Resty Upstream/".. _M._VERSION.. " HTTP Check (lua)"
-    }
-}
-
 local ssl_defaults = {
     ssl = false,
     ssl_verify = true,
     sni_host = nil,
 }
 
+local healthcheck_defaults = {
+    method = "GET",
+    path = "/",
+    headers = {
+        ["User-Agent"] = "Resty Upstream/".. _M._VERSION.. " HTTP Check (lua)"
+    }
+}
 
 function _M.new(_, upstream, ssl_opts)
     local ssl_opts = setmetatable(ssl_opts or {}, {__index = ssl_defaults})
@@ -71,23 +70,11 @@ end
 
 local function http_check_request(self, httpc, params)
     -- Set params
-    local req_params = {}
-    if type(params) ~= 'table' then
-        req_params = check_defaults
-    else
-        for k,v in pairs(check_defaults) do
-            if not params[k] then
-                req_params[k] = v
-            else
-                req_params[k] = params[k]
-            end
-        end
-        if not req_params['headers'] or not req_params['headers']["User-Agent"] then
-            req_params['headers']["User-Agent"] = check_defaults['headers']["User-Agent"]
-        end
+    if not params['headers']["User-Agent"] then
+        params['headers']["User-Agent"] = check_defaults['headers']["User-Agent"]
     end
 
-    local res, err = httpc:request(req_params)
+    local res, err = httpc:request(params)
 
     -- Read and discard body
     local reader
@@ -119,8 +106,27 @@ function _M._http_background_func(self)
 
     for poolid, pool in pairs(pools) do
         pool.id = poolid
-        for _, host in ipairs(pool.hosts) do
-            if host.healthcheck ~= nil and host.healthcheck ~= false then
+        for host_idx, host in ipairs(pool.hosts) do
+
+            -- Only run if healthcheck is configured, has never been checked or is over check interval
+            local now = ngx.now()
+            local healthcheck = host.healthcheck
+            if healthcheck and (healthcheck.interval + (healthcheck.last_check or 0)) < now then
+                -- Set default values for healthcheck
+                setmetatable(healthcheck, {__index = healthcheck_defaults})
+
+                -- Healthcheck requests could take a long time, lock for as short as possible
+                local upstream = self.upstream
+                local locked_pools, err = upstream:get_locked_pools()
+                if locked_pools then
+                    locked_pools[pool.id].hosts[host_idx].healthcheck.last_check = now -- TODO: sanity checking here
+                    local ok, err = upstream:save_pools(locked_pools)
+                    if not ok then
+                        self:log(ngx_ERR, "Error saving pools: ", err)
+                    end
+                    upstream:unlock_pools()
+                end
+
                 -- Set connect timeout
                 httpc:set_timeout(pool.timeout)
 
@@ -155,7 +161,7 @@ function _M._http_background_func(self)
                         end
                     end
                     if ssl_ok then -- Don't HTTP if handshake failed
-                        local res, err = http_check_request(self, httpc, host.healthcheck)
+                        local res, err = http_check_request(self, httpc, healthcheck)
                         res, err = self:check_response(res, err, host, pool)
                     end
                 end
@@ -182,11 +188,12 @@ http_background_thread = function(premature, self)
 
     -- HTTP active checks
     self:_http_background_func()
+
     -- Run process_failed_hosts inline rather than after the request is done
     upstream._process_failed_hosts(false, upstream, upstream:ctx())
 
-    -- Run upstream.socket background thread
-    upstream:_background_func()
+    -- Revive any hosts that have passed their fail timeout
+    upstream:revive_hosts()
 
     upstream:release_background_lock()
 end

@@ -47,8 +47,13 @@ local default_host = {
     lastfail = 0
 }
 
+local http_healthcheck_required = {
+    interval = 60, -- Run every time background function runs if nil
+    last_check = 0,
+}
+
 local optional_host = {
-    ['healthcheck'] = true
+    ['healthcheck'] = false
 }
 
 function _M.new(_, upstream)
@@ -304,6 +309,20 @@ function _M.add_host(self, poolid, host)
         end
     end
     new_host.id = hostid
+
+    -- Set http healthcheck minimum attributes
+    local http_check = new_host.healthcheck
+    if http_check then
+        if http_check == true then
+            new_host.healthcheck = http_healthcheck_required
+        else
+            for k,v in pairs(http_healthcheck_required) do
+                if not http_check[k] then
+                    http_check[k] = v
+                end
+            end
+        end
+    end
 
     pool.hosts[#pool.hosts+1] = new_host
 

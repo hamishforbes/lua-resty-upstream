@@ -160,7 +160,7 @@ host_down fired!
             end
 
             -- Run background func inline rather than after the request is done
-            upstream:_background_func()
+            upstream:revive_hosts()
 
         ';
     }

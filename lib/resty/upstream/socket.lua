@@ -22,7 +22,8 @@ local resty_lock = require('resty.lock')
 local _M = {
     _VERSION = '0.02',
     available_methods = {},
-    background_period = 60
+    background_period = 10,
+    background_timeout = 120
 }
 
 local mt = { __index = _M }
@@ -46,7 +47,7 @@ background_thread = function(premature, self)
         return
     end
 
-    self:_background_func()
+    self:revive_hosts()
 
     self:release_background_lock()
 end
@@ -60,7 +61,7 @@ end
 function _M.get_background_lock(self)
     local pid = ngx_worker_pid()
     local dict = self.dict
-    local lock, err = dict:add(self.background_flag, pid, self.background_period*3)
+    local lock, err = dict:add(self.background_flag, pid, self.background_timeout)
     if lock then
         return true
     end
@@ -314,7 +315,7 @@ function _M.init_background_thread(self)
 end
 
 
-function _M._background_func(self)
+function _M.revive_hosts(self)
     local now = now()
 
     -- Reset state for any failed hosts

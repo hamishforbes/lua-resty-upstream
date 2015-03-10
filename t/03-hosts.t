@@ -154,7 +154,7 @@ OK
     location = / {
         content_by_lua '
             test_api:down_host("primary", "a")
-            upstream:_background_func()
+            upstream:revive_hosts()
 
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
@@ -188,7 +188,7 @@ GET /
             upstream:save_pools(pools)
 
             test_api:down_host("primary", "a")
-            upstream:_background_func()
+            upstream:revive_hosts()
 
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
@@ -222,7 +222,7 @@ GET /
             host.lastfail = ngx.now() - (pools.primary.failed_timeout+1)
             upstream:save_pools(pools)
 
-            upstream:_background_func()
+            upstream:revive_hosts()
 
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)

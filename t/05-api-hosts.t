@@ -491,7 +491,23 @@ GET /a
             local pools, err = upstream:get_pools()
             local idx = upstream.get_host_idx("a", pools.primary.hosts)
             local host = pools.primary.hosts[idx]
-            if cjson.encode(host.healthcheck) ~= cjson.encode(check_params) then
+            local host_check = host.healthcheck
+
+            local r_compare
+            r_compare = function (a,b)
+                for k,v in pairs(a) do
+                    if type(b[k]) == "table" then
+                        if not r_compare(b[k], v) then
+                            return false
+                        end
+                    elseif b[k] ~= v then
+                        return false
+                    end
+                end
+                return true
+            end
+
+            if not r_compare(check_params, host_check) then
                 ngx.status = 500
             end
         ';
@@ -499,3 +515,4 @@ GET /a
 --- request
 GET /
 --- error_code: 200
+
