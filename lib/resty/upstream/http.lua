@@ -93,84 +93,100 @@ local function http_check_request(self, httpc, params)
 end
 
 
-function _M._http_background_func(self)
-    -- Active HTTP checks
-    local upstream = self.upstream
-    local httpc = http.new()
-    local pools = upstream:get_pools()
+local function healthcheck(self, host, pool, host_idx)
+    -- Only run if healthcheck is configured, has never been checked or is over check interval
+    local now = ngx.now()
+    local healthcheck = host.healthcheck
+    if healthcheck and (healthcheck.interval + (healthcheck.last_check or 0)) <= now then
+        -- Healthcheck requests could take a long time, lock for as short as possible
+        local upstream = self.upstream
+        local locked_pools, err = upstream:get_locked_pools()
+        if locked_pools then
+            locked_pools[pool.id].hosts[host_idx].healthcheck.last_check = now -- TODO: sanity checking here
+            local ok, err = upstream:save_pools(locked_pools)
+            if not ok then
+                self:log(ngx_ERR, "Error saving pools: ", err)
+            end
+            upstream:unlock_pools()
+        end
 
-    for poolid, pool in pairs(pools) do
-        pool.id = poolid
-        for host_idx, host in ipairs(pool.hosts) do
+        -- Set default values for healthcheck, resty-http uses metatables internally so do this manually
+        for k,v in pairs(healthcheck_defaults) do
+            if not healthcheck[k] then
+                healthcheck[k] = v
+            end
+        end
+        -- Set default headers
+        for k,v in pairs(healthcheck_defaults.headers) do
+            if not healthcheck.headers[k] then
+                healthcheck.headers[k] = v
+            end
+        end
 
-            -- Only run if healthcheck is configured, has never been checked or is over check interval
-            local now = ngx.now()
-            local healthcheck = host.healthcheck
-            if healthcheck and (healthcheck.interval + (healthcheck.last_check or 0)) <= now then
-                -- Healthcheck requests could take a long time, lock for as short as possible
-                local upstream = self.upstream
-                local locked_pools, err = upstream:get_locked_pools()
-                if locked_pools then
-                    locked_pools[pool.id].hosts[host_idx].healthcheck.last_check = now -- TODO: sanity checking here
-                    local ok, err = upstream:save_pools(locked_pools)
-                    if not ok then
-                        self:log(ngx_ERR, "Error saving pools: ", err)
-                    end
-                    upstream:unlock_pools()
-                end
+        local httpc = http.new()
+        -- Set connect timeout
+        httpc:set_timeout(pool.timeout)
 
-                -- Set default values for healthcheck, resty-http uses metatables internally so do this manually
-                for k,v in pairs(healthcheck_defaults) do
-                    if not healthcheck[k] then
-                        healthcheck[k] = v
-                    end
-                end
-                -- Set default headers
-                for k,v in pairs(healthcheck_defaults.headers) do
-                    if not healthcheck.headers[k] then
-                        healthcheck.headers[k] = v
-                    end
-                end
+        local ok,err = httpc:connect(host.host, host.port)
+        if not ok then
+            failed_request(self, host.id, pool.id)
+            if host.up then
+                -- Only log if it wasn't already down
+                self:log(ngx_ERR,
+                    str_format("Connection failed for host '%s' (%s:%i) in pool '%s': %s",
+                     host.id, host.host, host.port, pool.id, err)
+                )
+            end
+        else
+            -- Set read timeout
+            httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
 
-                -- Set connect timeout
-                httpc:set_timeout(pool.timeout)
-
-                local ok,err = httpc:connect(host.host, host.port)
-                if not ok then
+            local ssl_opts = self.ssl_opts
+            local ssl_ok = true
+            if ssl_opts.ssl then
+                local err
+                ssl_ok, err = httpc:ssl_handshake(nil, ssl_opts.sni_name, ssl_opts.verify)
+                if not ssl_ok then
                     failed_request(self, host.id, pool.id)
                     if host.up then
                         -- Only log if it wasn't already down
                         self:log(ngx_ERR,
-                            str_format("Connection failed for host '%s' (%s:%i) in pool '%s': %s",
-                             host.id, host.host, host.port, poolid, err)
+                            str_format("SSL Handshake failed for host '%s' (%s:%i) in pool '%s': %s",
+                             host.id, host.host, host.port, pool.id, err)
                         )
-                    end
-                else
-                    -- Set read timeout
-                    httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
-
-                    local ssl_opts = self.ssl_opts
-                    local ssl_ok = true
-                    if ssl_opts.ssl then
-                        local err
-                        ssl_ok, err = httpc:ssl_handshake(nil, ssl_opts.sni_name, ssl_opts.verify)
-                        if not ssl_ok then
-                            failed_request(self, host.id, pool.id)
-                            if host.up then
-                                -- Only log if it wasn't already down
-                                self:log(ngx_ERR,
-                                    str_format("SSL Handshake failed for host '%s' (%s:%i) in pool '%s': %s",
-                                     host.id, host.host, host.port, poolid, err)
-                                )
-                            end
-                        end
-                    end
-                    if ssl_ok then -- Don't HTTP if handshake failed
-                        local res, err = http_check_request(self, httpc, healthcheck)
-                        res, err = self:check_response(res, err, host, pool)
                     end
                 end
             end
+            if ssl_ok then -- Don't HTTP if handshake failed
+                local res, err = http_check_request(self, httpc, healthcheck)
+                res, err = self:check_response(res, err, host, pool)
+            end
+        end
+    end
+end
+
+
+function _M._http_background_func(self)
+    -- Active HTTP checks
+    local spawn = ngx.thread.spawn
+    local wait = ngx.thread.wait
+    local threads = {}
+    local thread_idx = 0
+
+    local upstream = self.upstream
+    local pools = upstream:get_pools()
+    for poolid, pool in pairs(pools) do
+        pool.id = poolid
+        for host_idx, host in ipairs(pool.hosts) do
+            thread_idx = thread_idx + 1
+            threads[thread_idx] = spawn(healthcheck, self, host, pool, host_idx)
+        end
+    end
+
+    for i = 1, thread_idx do
+        local ok, res = wait(threads[i])
+        if not ok then
+            self:log(ngx_ERR, "Thread #", i, ": failed to run: ", res)
         end
     end
 end
