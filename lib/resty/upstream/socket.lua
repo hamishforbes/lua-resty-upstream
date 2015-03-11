@@ -20,7 +20,7 @@ local json_decode = cjson.decode
 local resty_lock = require('resty.lock')
 
 local _M = {
-    _VERSION = '0.02',
+    _VERSION = '0.03',
     available_methods = {},
     background_period = 10,
     background_timeout = 120
