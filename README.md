@@ -176,7 +176,7 @@ e.g.
                 lastfail = 0,
                 failcount = 0,
                 up = true,
-                healthcheck = { path = '/check' }
+                healthcheck = { interval = 30, path = '/check' }
             }
         }
     },
@@ -319,11 +319,14 @@ The default check is a `GET` request for `/`.
 
 The `healthcheck` parameter can also be a table of parameters valid for lua-resty-http's [request](https://github.com/pintsized/lua-resty-http#request) method.
 
+With 1 additional parameter `interval` to set the time between healthchecks, in seconds. Defaults to 60s
+
 Failure for the background check is according to the same parameters as for a frontend request.
 
 ```lua
 -- Custom check parameters
 api:add_host("primary", {
+     interval = 120,
      host = 123.123.123.123,
      port = 80,
      healthcheck = {
