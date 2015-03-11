@@ -18,7 +18,6 @@ local mt = { __index = _M }
 
 local default_status_codes = {
     ['5xx'] = true,
-    ['400'] = true
 }
 
 local defaults = {
