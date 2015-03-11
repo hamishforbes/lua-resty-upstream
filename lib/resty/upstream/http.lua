@@ -69,11 +69,6 @@ end
 
 
 local function http_check_request(self, httpc, params)
-    -- Set params
-    if not params['headers']["User-Agent"] then
-        params['headers']["User-Agent"] = check_defaults['headers']["User-Agent"]
-    end
-
     local res, err = httpc:request(params)
 
     -- Read and discard body
@@ -111,10 +106,7 @@ function _M._http_background_func(self)
             -- Only run if healthcheck is configured, has never been checked or is over check interval
             local now = ngx.now()
             local healthcheck = host.healthcheck
-            if healthcheck and (healthcheck.interval + (healthcheck.last_check or 0)) < now then
-                -- Set default values for healthcheck
-                setmetatable(healthcheck, {__index = healthcheck_defaults})
-
+            if healthcheck and (healthcheck.interval + (healthcheck.last_check or 0)) <= now then
                 -- Healthcheck requests could take a long time, lock for as short as possible
                 local upstream = self.upstream
                 local locked_pools, err = upstream:get_locked_pools()
@@ -125,6 +117,19 @@ function _M._http_background_func(self)
                         self:log(ngx_ERR, "Error saving pools: ", err)
                     end
                     upstream:unlock_pools()
+                end
+
+                -- Set default values for healthcheck, resty-http uses metatables internally so do this manually
+                for k,v in pairs(healthcheck_defaults) do
+                    if not healthcheck[k] then
+                        healthcheck[k] = v
+                    end
+                end
+                -- Set default headers
+                for k,v in pairs(healthcheck_defaults.headers) do
+                    if not healthcheck.headers[k] then
+                        healthcheck.headers[k] = v
+                    end
                 end
 
                 -- Set connect timeout

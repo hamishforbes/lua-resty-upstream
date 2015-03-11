@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * 20;
+plan tests => repeat_each() * 26;
 
 my $pwd = cwd();
 
@@ -321,3 +321,91 @@ GET /foo
 GET /foo
 --- error_log: Background check received
 --- response_body: 60 last_check
+
+=== TEST 7: Default background check params are set - bool
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", {
+                 id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1,
+                 healthcheck = true
+                })
+    ';
+}
+--- config
+    location = / {
+        content_by_lua '
+            local headers = ngx.req.get_headers()
+            ngx.log(ngx.ERR, "Background check received from "..headers["User-Agent"])
+        ';
+    }
+    location = /foo {
+        content_by_lua '
+            http:_http_background_func()
+       ';
+    }
+--- request
+GET /foo
+--- error_log: Background check received from Resty Upstream
+
+=== TEST 7b: Default background check params are set - table
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", {
+                 id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1,
+                 healthcheck = { path = "/check" }
+                })
+    ';
+}
+--- config
+    location = /check {
+        content_by_lua '
+            local headers = ngx.req.get_headers()
+            ngx.log(ngx.ERR, "Background check received from "..headers["User-Agent"])
+        ';
+    }
+    location = /foo {
+        content_by_lua '
+            http:_http_background_func()
+       ';
+    }
+--- request
+GET /foo
+--- error_log: Background check received from Resty Upstream
+
+=== TEST 7c: Default background check params are set - custom headers
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", {
+                 id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1,
+                 healthcheck = {
+                    path = "/check",
+                    headers = {
+                        ["X-Foo"] = "baz"
+                    }
+                 }
+                })
+    ';
+}
+--- config
+    location = /check {
+        content_by_lua '
+            local headers = ngx.req.get_headers()
+            ngx.log(ngx.ERR, "Background check received from "..headers["User-Agent"])
+            ngx.log(ngx.ERR, "X-Foo: "..headers["X-Foo"])
+        ';
+    }
+    location = /foo {
+        content_by_lua '
+            http:_http_background_func()
+       ';
+    }
+--- request
+GET /foo
+--- error_log: Background check received from Resty Upstream
+--- error_log: X-Foo: baz
