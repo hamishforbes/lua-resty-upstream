@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => 8;
+plan tests => 14;
 
 my $pwd = cwd();
 
@@ -39,7 +39,33 @@ no_long_string();
 run_tests();
 
 __DATA__
-=== TEST 1: Cannot bind to a non-existent event
+=== TEST 1: Can bind to an event
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+    ';
+}
+--- log_level: debug
+--- config
+    location = /a {
+        content_by_lua '
+
+            local ok, err = upstream:bind("host_up", function(event) 
+            end)
+            if not ok then
+                ngx.say(err)
+            else
+                ngx.say("OK")
+            end
+        ';
+    }
+--- request
+GET /a
+--- response_body
+OK
+
+=== TEST 1b: Cannot bind to a non-existent event
 --- http_config eval
 "$::HttpConfig"
 ."$::InitConfig"
@@ -63,7 +89,7 @@ GET /a
 --- response_body
 Event not found
 
-=== TEST 2: Can only bind a function
+=== TEST 2: Can't bind a string
 --- http_config eval
 "$::HttpConfig"
 ."$::InitConfig"
@@ -86,7 +112,57 @@ GET /a
 --- response_body
 Can only bind a function
 
-=== TEST 3: host_down event fires
+=== TEST 2b: Can't bind a table
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+    ';
+}
+--- log_level: debug
+--- config
+    location = /a {
+        content_by_lua '
+
+            local ok, err = upstream:bind("host_down", {})
+            if not ok then
+                ngx.say(err)
+            end
+        ';
+    }
+--- request
+GET /a
+--- response_body
+Can only bind a function
+
+=== TEST 3: bind passes through http upstream
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+    ';
+}
+--- log_level: debug
+--- config
+    location = /a {
+        content_by_lua '
+            local upstream_http  = require("resty.upstream.http")
+            http = upstream_http:new(upstream)
+
+            local ok, err = http:bind("host_down", function(e) end )
+            if not ok then
+                ngx.say(err)
+            else
+                ngx.say("OK")
+            end
+        ';
+    }
+--- request
+GET /a
+--- response_body
+OK
+
+=== TEST 4: host_down event fires
 --- http_config eval
 "$::HttpConfig"
 ."$::InitConfig"
@@ -130,7 +206,7 @@ GET /
 host_down fired!
 {"host":"127.0.0.1","host_id":"a","pool":"primary","host_up":false}
 
-=== TEST 4: host_up event fires
+=== TEST 5: host_up event fires
 --- http_config eval
 "$::HttpConfig"
 ."$::InitConfig"
