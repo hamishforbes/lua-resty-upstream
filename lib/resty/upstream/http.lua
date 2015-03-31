@@ -55,6 +55,11 @@ function _M.log(self, ...)
 end
 
 
+function _M.bind(self, ...)
+    return self.upstream:bind(...)
+end
+
+
 function _M.process_failed_hosts(self, ...)
     self.upstream:process_failed_hosts(...)
 end
