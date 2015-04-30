@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (19);
+plan tests => repeat_each() * (23);
 
 my $pwd = cwd();
 
@@ -515,4 +515,54 @@ GET /a
 --- request
 GET /
 --- error_code: 200
+
+=== TEST 9: Cannot set non-numeric host values
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+    ';
+}
+--- config
+    location = /a {
+        content_by_lua '
+            local ok, err = test_api:add_host("primary", { id="a", host = "127.0.0.1", port = "foo"})
+            if not ok then ngx.say(err) end
+            local ok, err = test_api:add_host("primary", { id="b", host = "127.0.0.1", weight = "foo"})
+            if not ok then ngx.say(err) end
+            local ok, err = test_api:add_host("primary", { id="c", host = "127.0.0.1", failcount = "foo"})
+            if not ok then ngx.say(err) end
+            local ok, err = test_api:add_host("primary", { id="d", host = "127.0.0.1", lastfail = "foo"})
+            if not ok then ngx.say(err) end
+        ';
+    }
+--- request
+GET /a
+--- error_code: 200
+--- response_body
+port must be a number
+weight must be a number
+failcount must be a number
+lastfail must be a number
+
+
+=== TEST 9: Cannot set numeric string values
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+    ';
+}
+--- config
+    location = /a {
+        content_by_lua '
+            local ok, err = test_api:add_host("primary", { id="a", host = "127.0.0.1", port = "443"})
+            if not ok then ngx.say(err) else ngx.say("OK") end
+        ';
+    }
+--- request
+GET /a
+--- error_code: 200
+--- response_body
+OK
 

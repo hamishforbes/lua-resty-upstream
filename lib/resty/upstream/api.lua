@@ -35,7 +35,11 @@ local numerics = {
     'max_fails',
     'read_timeout',
     'keepalive_timeout',
-    'keepalive_pool'
+    'keepalive_pool',
+    'port',
+    'weight',
+    'failcount',
+    'lastfail'
 }
 
 local default_host = {
@@ -131,7 +135,12 @@ local function validate_pool(opts, pools, methods)
 
     for _,key in ipairs(numerics) do
         if opts[key] and type(opts[key]) ~= "number" then
-            return nil, key.. " must be a number"
+            local tmp = tonumber(opts[key])
+            if not tmp then
+                return nil, key.. " must be a number"
+            else
+                opts[key] = tmp
+            end
         end
     end
     if opts.method and not methods[opts.method] then
@@ -309,6 +318,18 @@ function _M.add_host(self, poolid, host)
         end
     end
     new_host.id = hostid
+
+    for _,key in ipairs(numerics) do
+        if new_host[key] and type(new_host[key]) ~= "number" then
+            local tmp = tonumber(new_host[key])
+            if not tmp then
+                self:unlock_pools()
+                return nil, key.. " must be a number"
+            else
+                new_host[key] = tmp
+            end
+        end
+    end
 
     -- Set http healthcheck minimum attributes
     local http_check = new_host.healthcheck
