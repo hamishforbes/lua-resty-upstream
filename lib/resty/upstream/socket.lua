@@ -15,9 +15,31 @@ local getfenv = getfenv
 local shared = ngx.shared
 local phase = ngx.get_phase
 local cjson = require('cjson')
-local json_encode = cjson.encode
-local json_decode = cjson.decode
+local cjson_encode = cjson.encode
+local cjson_decode = cjson.decode
 local resty_lock = require('resty.lock')
+
+
+local safe_json = function(func, data)
+    local ok, ret = pcall(func, data)
+    if ok then
+        return ret
+    else
+        ngx_log(ngx_ERR, ret)
+        return nil, ret
+    end
+end
+
+
+local json_decode = function(data)
+    return safe_json(cjson_decode, data)
+end
+
+
+local json_encode = function(data)
+   return safe_json(cjson_encode, data)
+end
+
 
 local _M = {
     _VERSION = '0.03',
@@ -181,11 +203,12 @@ end
 
 function _M.get_pools(self)
     local ctx = self:ctx()
+    local err
     if ctx.pools == nil then
         local pool_str = self.dict:get(self.pools_key)
-        ctx.pools = json_decode(pool_str)
+        ctx.pools, err = json_decode(pool_str)
     end
-    return ctx.pools
+    return ctx.pools, err
 end
 
 
@@ -282,7 +305,10 @@ end
 function _M.save_pools(self, pools)
     pools = pools or {}
     self:ctx().pools = pools
-    local serialised = json_encode(pools)
+    local serialised, err = json_encode(pools)
+    if not serialised then
+        return nil, err
+    end
     return self.dict:set(self.pools_key, serialised)
 end
 

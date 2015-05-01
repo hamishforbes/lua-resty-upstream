@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (20);
+plan tests => repeat_each() * (26);
 
 my $pwd = cwd();
 
@@ -234,3 +234,46 @@ OK
 --- no_error_log
 [error]
 [warn]
+
+=== TEST 6: Bad json encode is caught
+--- http_config eval: $::HttpConfig
+--- config
+    location = /a {
+        content_by_lua '
+            local bad_conf = {
+                primary = function(test) ngx.say("cant serialise a function!") end
+            }
+
+            local ok, err = upstream:save_pools(bad_conf)
+            ngx.say(err)
+        ';
+    }
+--- request
+GET /a
+--- response_body
+Cannot serialise function: type not supported
+
+--- error_log: Cannot serialise function
+
+=== TEST 7: Bad json decode is caught
+--- http_config eval: $::HttpConfig
+--- config
+    location = /a {
+        content_by_lua '
+            local bad_json = [[
+            { wtf kind of json is this??!!!11eleven}
+            ]]
+
+            local dict = ngx.shared["test_upstream"]
+            dict:set(upstream.pools_key, bad_json)
+
+            local ok, err = upstream:get_pools(bad_conf)
+            ngx.say(err)
+        ';
+    }
+--- request
+GET /a
+--- response_body
+Expected object key string but found invalid token at character 15
+
+--- error_log: Expected object key string but found invalid token
