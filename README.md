@@ -302,7 +302,7 @@ Manually restores a dead host to the pool
 Functions for making http requests to upstream hosts.
 
 ### status_codes
-This pool option is an array of status codes that indicate a failed request.
+This pool option is an array of status codes that indicate a failed request. Defaults to none.
 
 ```lua
 {
