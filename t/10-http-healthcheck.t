@@ -25,9 +25,9 @@ our $InitConfig = qq{
         test_api = upstream_api:new(upstream)
         http = upstream_http:new(upstream)
 
-        test_api:create_pool({id = "primary", timeout = 100, read_timeout = 1100, keepalive_timeout = 1 })
+        test_api:create_pool({id = "primary", timeout = 100, read_timeout = 1100, keepalive_timeout = 1, status_codes = {["5xx"] = true} })
 
-        test_api:create_pool({id = "secondary", timeout = 100, priority = 10})
+        test_api:create_pool({id = "secondary", timeout = 100, priority = 10, status_codes = {["5xx"] = true}})
 };
 
 $ENV{TEST_NGINX_RESOLVER} = '8.8.8.8';
