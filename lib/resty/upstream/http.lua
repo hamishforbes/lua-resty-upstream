@@ -130,7 +130,7 @@ local function healthcheck(self, host, pool, host_idx)
 
         local httpc = http.new()
         -- Set connect timeout
-        httpc:set_timeout(pool.timeout)
+        httpc:set_timeout(healthcheck.timeout or pool.timeout)
 
         local ok,err = httpc:connect(host.host, host.port)
         if not ok then
@@ -144,7 +144,8 @@ local function healthcheck(self, host, pool, host_idx)
             end
         else
             -- Set read timeout
-            httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
+            local read_timeout = healthcheck.read_timeout or (pool.read_timeout or defaults.read_timeout)
+            httpc:set_timeout(read_timeout)
 
             local ssl_opts = self.ssl_opts
             local ssl_ok = true
@@ -164,7 +165,7 @@ local function healthcheck(self, host, pool, host_idx)
             end
             if ssl_ok then -- Don't HTTP if handshake failed
                 local res, err = http_check_request(self, httpc, healthcheck)
-                res, err = self:check_response(res, err, host, pool)
+                res, err = self:validate_response(res, err, host, pool, healthcheck)
             end
         end
     end
@@ -233,11 +234,11 @@ function _M.init_background_thread(self)
 end
 
 
-function _M.check_response(self, res, http_err, host, pool)
+function _M.validate_response(self, res, http_err, host, pool, healthcheck)
     if not res then
         -- Request failed in some fashion
         if host.up == true then
-            self:log(ngx_ERR, 
+            self:log(ngx_ERR,
                 str_format("HTTP Request Error from host '%s' (%s:%i) in pool '%s': %s",
                     (host.id or "unknown"),
                     host.host or "unknown",
@@ -253,6 +254,9 @@ function _M.check_response(self, res, http_err, host, pool)
     else
         -- Got a response, check status
         local status_codes = pool.status_codes or default_status_codes
+        if healthcheck then
+            status_codes = healthcheck.status_codes or status_codes
+        end
         local status_code = tostring(res.status)
 
         -- Status codes are always 3 characters, so check for #xx or ##x
@@ -324,7 +328,7 @@ local function _request(self, upstream, httpc, params)
     httpc:set_timeout(pool.read_timeout or defaults.read_timeout)
 
     local res, http_err = httpc:request(params)
-    res, http_err = self:check_response(res, http_err, host, pool)
+    res, http_err = self:validate_response(res, http_err, host, pool)
 
     if not res then
         return nil, http_err
