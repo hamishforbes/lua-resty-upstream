@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * 26;
+plan tests => repeat_each() * 39;
 
 my $pwd = cwd();
 
@@ -409,3 +409,220 @@ GET /foo
 GET /foo
 --- error_log: Background check received from Resty Upstream
 --- error_log: X-Foo: baz
+
+=== TEST 8: Healthcheck read timeout overrides pool
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = {  path = "/check", read_timeout = 100 } })
+    ';
+}
+--- config
+    location = / {
+        content_by_lua '
+            ngx.update_time()
+            local start = ngx.now()
+
+            http:_http_background_func()
+
+            ngx.update_time()
+            local stop = ngx.now()
+            local duration = stop - start
+
+            -- Pool timeout is 1100
+            if duration > 0.50 then
+                ngx.say("Fail")
+            else
+                ngx.say("OK")
+            end
+        ';
+    }
+    location = /check {
+        content_by_lua '
+            ngx.sleep(900)
+            ngx.say("OK")
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+--- response_body
+OK
+
+=== TEST 8b: Healthcheck read timeout doesn't affect frontend
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = {  path = "/check", read_timeout = 100 } })
+    ';
+}
+--- config
+    location = / {
+        content_by_lua '
+            ngx.update_time()
+            local start = ngx.now()
+
+            local ok, err = http:request({path = "/check"})
+
+            ngx.update_time()
+            local stop = ngx.now()
+            local duration = stop - start
+
+            -- Pool timeout is 1100
+            if duration < 0.80 then
+                ngx.say("Fail")
+            else
+                ngx.say("OK")
+            end
+        ';
+    }
+    location = /check {
+        content_by_lua '
+            ngx.sleep(900)
+            ngx.say("OK")
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+--- response_body
+OK
+
+=== TEST 9: Healthcheck connect timeout overrides pool
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "10.123.123.123", port = $TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = { timeout = 10 } })
+    ';
+}
+--- config
+    location = / {
+        content_by_lua '
+            ngx.update_time()
+            local start = ngx.now()
+
+            http:_http_background_func()
+
+            ngx.update_time()
+            local stop = ngx.now()
+            local duration = stop - start
+
+            -- Pool timeout is 100
+            if duration > 0.05 then
+                ngx.say("Fail")
+            else
+                ngx.say("OK")
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+--- response_body
+OK
+
+=== TEST 9b: Healthcheck connect timeout doesn't affect frontend
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "10.123.123.123", port = $TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = { timeout = 10 } })
+    ';
+}
+--- config
+    location = / {
+        content_by_lua '
+            ngx.update_time()
+            local start = ngx.now()
+
+            local ok, err = http:request({path = "/check"})
+
+            ngx.update_time()
+            local stop = ngx.now()
+            local duration = stop - start
+
+            -- Pool timeout is 100
+            if duration < 0.05 then
+                ngx.say("Fail")
+            else
+                ngx.say("OK")
+            end
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+--- response_body
+OK
+
+
+=== TEST 10: Healthcheck status_codes override pool
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = {  path = "/check", status_codes = {["403"] = true} } })
+    ';
+}
+--- config
+    location = / {
+        content_by_lua '
+            http:_http_background_func()
+
+            -- Run process_failed_hosts inline rather than after the request is done
+            upstream._process_failed_hosts(false, upstream, upstream:ctx())
+
+            local pools, err = upstream:get_pools()
+            local idx = upstream.get_host_idx("a", pools.primary.hosts)
+            local host = pools.primary.hosts[idx]
+            if host.failcount ~= 1 then
+                ngx.status = 500
+            end
+        ';
+    }
+    location = /check {
+        content_by_lua '
+            ngx.status = 403
+            ngx.say("OK")
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+--- error_log: HTTP 403 from Host "a"
+
+=== TEST 10b: Healthcheck status_codes doesn't affect frontend
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+            test_api:add_host("primary", { id="a", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, healthcheck = {  path = "/check", status_codes = {["403"] = true} } })
+    ';
+}
+--- config
+    location = / {
+        content_by_lua '
+            local res, err = http:request({path = "/check"})
+            if not res then
+                ngx.status = err.status
+                ngx.say(err.err)
+                return ngx.exit(ngx.status)
+            end
+            ngx.say(res.status)
+        ';
+    }
+    location = /check {
+        content_by_lua '
+            ngx.status = 403
+            ngx.say("OK")
+        ';
+    }
+--- request
+GET /
+--- error_code: 200
+--- no_error_log: HTTP 403 from Host "a"
+--- response_body
+403
