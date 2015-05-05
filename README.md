@@ -26,13 +26,14 @@ Upstream connection load balancing and failover module
     * [up_host](#up_host)
 * [upstream.http](#upstream.http)
     * [status_codes](#status_codes)
-    * [healthchecks](#healthchecks)
     * [new](#new-2)
     * [init_background_thread](#init_background_thread-1)
     * [request](#request)
     * [set_keepalive](#set_keepalive)
     * [get_reused_times](#get_reused_times)
     * [close](#close)
+* [HTTP Healthchecks](#http-healthchecks)
+
 
 #Status
 
@@ -128,7 +129,7 @@ When passed a [socket](https://github.com/openresty/lua-nginx-module#ngxsockettc
 resty_redis = require('resty.redis')
 local redis = resty_redis.new()
 
-local redis, e = upstream:connect(redis)
+local redis, err = upstream:connect(redis)
 
 if not redis then
     ngx.log(ngx.ERR, err)
@@ -152,6 +153,7 @@ Spawns an immediate callback via [ngx.timer.at](https://github.com/openresty/lua
 
 Returns a table containing the current pool and host configuration.
 e.g.
+
 ```lua
 {
     primary = {
@@ -254,7 +256,17 @@ Currently only randomised round robin is supported.
 `syntax: ok, err = api:create_pool(pool)`
 
 Creates a new pool from a table of options, `pool` must contain at least 1 key `id` which must be unique within the current upstream object.
-Other valid options are `method`, `timeout`, `priority`, `read_timeout`, `keepalive_timeout`, `keepalive_pool` and `status_codes`.
+
+Other valid options are 
+
+* `method` Balancing method, currently only `round_robin` is supported
+* `timeout` Connection timeout in ms
+* `priority` Higher priority pools are used later
+* `read_timeout`
+* `keepalive_timeout`
+* `keepalive_pool`
+* `status_codes` See [status_codes](#status_codes)
+ 
 Hosts cannot be defined at this point.
 
 Note: IDs are converted to a string by this function
@@ -304,44 +316,15 @@ Functions for making http requests to upstream hosts.
 ### status_codes
 This pool option is an array of status codes that indicate a failed request. Defaults to none.
 
+The `x` character masks a digit
+
 ```lua
 {
-    ['5xx'] = true,
-    ['400'] = true
+    ['5xx'] = true, -- Matches 500, 503, 524
+    ['400'] = true  -- Matches only 400
 }
 ```
 
-### healthchecks
-
-Active background healthchecks can be enabled by adding the `healthcheck` parameter to a host.
-
-The default check is a `GET` request for `/`.
-
-The `healthcheck` parameter can also be a table of parameters valid for lua-resty-http's [request](https://github.com/pintsized/lua-resty-http#request) method.
-
-With 1 additional parameter `interval` to set the time between healthchecks, in seconds. Defaults to 60s
-
-Failure for the background check is according to the same parameters as for a frontend request.
-
-```lua
--- Custom check parameters
-api:add_host("primary", {
-     interval = 120,
-     host = 123.123.123.123,
-     port = 80,
-     healthcheck = {
-        path = "/check",
-        headers = {
-            ["Host"] = "domain.com",
-            ["Accept-Encoding"] = "gzip"
-        }
-     }
-})
-
--- Default check parameters
-api:add_host("primary", {host = 123.123.123.123, port = 80, healthcheck = true})
-
-```
 
 ### new
 `syntax: httpc, err = upstream_http:new(upstream, ssl_opts?)`
@@ -411,9 +394,53 @@ Passes through to the lua-resty-http `close` method.
 
 
 
+## HTTP Healthchecks
+
+Active background healthchecks can be enabled by adding the `healthcheck` parameter to a host.
+
+A value of `true` will enable the default check, a `GET` request for `/`.
+
+The `healthcheck` parameter can also be a table of parameters valid for lua-resty-http's [request](https://github.com/pintsized/lua-resty-http#request) method.
+
+With a few additional parameters
+
+* `interval` to set the time between healthchecks, in seconds. Must be >= 10s. Defaults to 60s
+* `timeout` sets the connect timeout for healthchecks. Defaults to pool setting.
+* `read_timeout` sets the read timeout for healthchecks. Defaults to pool setting.
+* `status_codes` a table of invalid response status codes. Defaults to pool setting.
+
+Failure for the background check is according to the same parameters as for a frontend request, unless overriden explicitly.
+
+```lua
+-- Custom check parameters
+api:add_host("primary", {
+     host = 123.123.123.123,
+     port = 80,
+     healthcheck = {
+        interval = 30, -- check every 30s
+        timeout      = (5*1000), -- 5s connect timeout
+        read_timeout = (15*1000), -- 15s connect timeout
+        status_codes = {["5xx"] = true, ["403"] = true}, -- 5xx and 403 responses are a fail
+        -- resty-http params
+        path = "/check",
+        headers = {
+            ["Host"] = "domain.com",
+            ["Accept-Encoding"] = "gzip"
+        }
+     }
+})
+
+-- Default check parameters
+api:add_host("primary", {host = 123.123.123.123, port = 80, healthcheck = true})
+
+```
+
+
 ## TODO
  * IP based sticky sessions
  * Slow start - recovered hosts have lower weighting
  * Active TCP healthchecks
+ * Use Cap'n Proto instead of JSON for serialisation
+ * HTTP Minimum Rises - Hosts must have n succesful healthchecks before being marked up
  * HTTP Specific options
      * Cookie based sticky sessions
