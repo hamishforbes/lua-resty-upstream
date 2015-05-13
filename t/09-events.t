@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => 14;
+plan tests => 17;
 
 my $pwd = cwd();
 
@@ -211,7 +211,7 @@ host_down fired!
 "$::HttpConfig"
 ."$::InitConfig"
 . q{
-        test_api:add_host("primary", { id="b", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, max_fails = 1, down = true, lastfail = 1 })
+        test_api:add_host("primary", { id="b", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, max_fails = 1, up = false, lastfail = 1 })
     ';
 }
 --- config
@@ -242,6 +242,46 @@ host_down fired!
     }
 --- request
 GET /
+--- no_error_log: error
 --- response_body
 host_up fired!
 {"host":"127.0.0.1","host_id":"b","pool":"primary","host_up":true}
+
+=== TEST 6: host_up event does not fire when reseting failcount
+--- http_config eval
+"$::HttpConfig"
+."$::InitConfig"
+. q{
+        test_api:add_host("primary", { id="b", host = "127.0.0.1", port = $TEST_NGINX_SERVER_PORT, weight = 1, failcount = 1, max_fails = 2, lastfail = 1 })
+    ';
+}
+--- config
+    location = / {
+        content_by_lua '
+            -- Bind event
+            local function host_up_handler(event)
+                ngx.say("host_up fired!")
+                local cjson = require("cjson")
+                local log = {
+                    host_id = event.host.id,
+                    host = event.host.host,
+                    host_max_fails = event.host.max_fails,
+                    host_up = event.host.up,
+                    pool = event.pool.id
+                }
+                ngx.say(cjson.encode(log))
+            end
+            local ok, err = upstream:bind("host_up", host_up_handler)
+            if not ok then
+                ngx.say(err)
+            end
+
+            -- Run background func inline rather than after the request is done
+            upstream:revive_hosts()
+
+        ';
+    }
+--- request
+GET /
+--- response_body_unlike
+host_up fired!

@@ -354,15 +354,17 @@ function _M.revive_hosts(self)
         for k, host in ipairs(pool.hosts) do
             -- Reset any hosts past their timeout
              if host.lastfail ~= 0 and (host.lastfail + failed_timeout) < now then
-                host.up = true
                 host.failcount = 0
                 host.lastfail = 0
                 changed = true
-                self:log(ngx_INFO,
-                    str_format('Host "%s" in Pool "%s" is up', host.id, poolid)
-                )
-                pool.id = poolid
-                emit(self, "host_up", {host = host, pool = pool})
+                if not host.up then
+                    host.up = true
+                    self:log(ngx_INFO,
+                        str_format('Host "%s" in Pool "%s" is up', host.id, poolid)
+                    )
+                    pool.id = poolid
+                    emit(self, "host_up", {host = host, pool = pool})
+                end
             end
         end
     end
