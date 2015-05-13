@@ -309,7 +309,8 @@ function _M.add_host(self, poolid, host)
 
     local new_host = {}
     for key, default in pairs(default_host) do
-        local val = host[key] or default
+        local val = host[key]
+        if val == nil then val = default end
         new_host[key] = val
     end
     for key, default in pairs(optional_host) do
