@@ -11,7 +11,7 @@ local tostring = tostring
 local http = require("resty.http")
 
 local _M = {
-    _VERSION = '0.03',
+    _VERSION = '0.04',
 }
 
 local mt = { __index = _M }
