@@ -206,6 +206,9 @@ function _M.get_pools(self)
     local err
     if ctx.pools == nil then
         local pool_str = self.dict:get(self.pools_key)
+        if not pool_str then
+            return nil, err
+        end
         ctx.pools, err = json_decode(pool_str)
     end
     return ctx.pools, err
@@ -229,9 +232,12 @@ function _M.get_locked_pools(self)
     local ok, err = lock:lock(self.lock_key)
 
     if ok then
-        local pool_str = self.dict:get(self.pools_key)
-        local pools = json_decode(pool_str)
-        return pools
+        local pool_str, err = self.dict:get(self.pools_key)
+        if not pool_str then
+            return nil, err
+        end
+        local pools, err = json_decode(pool_str)
+        return pools, err
     else
         self:log(ngx_ERR, "Failed to lock pools: ", err)
     end
@@ -256,8 +262,15 @@ end
 function _M.get_priority_index(self)
     local ctx = self:ctx()
     if ctx.priority_index == nil then
-        local priority_str = self.dict:get(self.priority_key)
-        ctx.priority_index = json_decode(priority_str)
+        local priority_str, err = self.dict:get(self.priority_key)
+        if not priority_str then
+            return nil, err
+        end
+        local priority_index, err = json_decode(priority_str)
+        if not priority_index then
+            return nil, err
+        end
+        ctx.priority_index = priority_index
     end
     return ctx.priority_index
 end
