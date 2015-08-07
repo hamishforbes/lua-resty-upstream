@@ -345,7 +345,10 @@ function _M.revive_hosts(self)
     local now = now()
 
     -- Reset state for any failed hosts
-    local pools = self:get_locked_pools()
+    local pools, err = self:get_locked_pools()
+    if not pools then
+        return nil, err
+    end
 
     local changed = false
     for poolid,pool in pairs(pools) do
@@ -395,7 +398,6 @@ function _M._process_failed_hosts(premature, self, ctx)
     local failed = ctx.failed
     local now = now()
     local get_host_idx = self.get_host_idx
-
     local pools, err = self:get_locked_pools()
     if not pools then
         return

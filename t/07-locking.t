@@ -3,7 +3,7 @@
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
-plan tests => repeat_each() * (14);
+plan tests => repeat_each() * (16);
 
 my $pwd = cwd();
 
@@ -194,3 +194,26 @@ GET /a
 --- response_body
 locked
 false
+
+
+=== TEST 8: revive_hosts returns nil when locked
+--- http_config eval: $::HttpConfig
+--- config
+    location = /a {
+        content_by_lua '
+            local pools, err = upstream:get_locked_pools()
+
+            local ok, err = upstream:revive_hosts()
+            if not ok then
+                ngx.say(err)
+            else
+                ngx.say("wat")
+            end
+
+            local ok, err = upstream:unlock_pools()
+        ';
+    }
+--- request
+GET /a
+--- response_body
+locked
