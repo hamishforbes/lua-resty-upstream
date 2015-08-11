@@ -6,7 +6,7 @@ local str_format = string.format
 local tostring = tostring
 
 local _M = {
-    _VERSION = '0.04',
+    _VERSION = '0.05',
 }
 
 local mt = { __index = _M }

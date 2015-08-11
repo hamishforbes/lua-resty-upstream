@@ -42,7 +42,7 @@ end
 
 
 local _M = {
-    _VERSION = '0.04',
+    _VERSION = '0.05',
     available_methods = {},
     background_period = 10,
     background_timeout = 120
