@@ -638,19 +638,23 @@ function _M.connect(self, sock)
     -- Loop over pools in priority order
     for _, poolid in ipairs(priority_index) do
         local pool = pools[poolid]
-        if pool.up then
-            pool.id = poolid
-            -- Set connection timeout
-            set_timeout(sock, pool.timeout)
+        if not pool then
+            self:log(ngx_ERR, "Pool '", poolid, "' invalid")
+        else
+            if pool.up then
+                pool.id = poolid
+                -- Set connection timeout
+                set_timeout(sock, pool.timeout)
 
-            -- Load balance between available hosts using specified method
-            connected, sock, host, err = available_methods[pool.method](self, pool, sock)
+                -- Load balance between available hosts using specified method
+                connected, sock, host, err = available_methods[pool.method](self, pool, sock)
 
-            if connected then
-                -- Return connected socket!
-                self:log(ngx_DEBUG, str_format("Connected to host '%s' (%s:%i) in pool '%s'",
-                    host.id, host.host, host.port, poolid))
-                return sock, {host = host, pool = pool}
+                if connected then
+                    -- Return connected socket!
+                    self:log(ngx_DEBUG, str_format("Connected to host '%s' (%s:%i) in pool '%s'",
+                        host.id, host.host, host.port, poolid))
+                    return sock, {host = host, pool = pool}
+                end
             end
         end
     end
