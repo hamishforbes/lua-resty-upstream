@@ -209,9 +209,13 @@ function _M.get_pools(self)
         if not pool_str then
             return nil, err
         end
-        ctx.pools, err = json_decode(pool_str)
+        local pools, err = json_decode(pool_str)
+        if not pools then
+            return nil, err
+        end
+        ctx.pools = json_decode(pool_str)
     end
-    return ctx.pools, err
+    return ctx.pools
 end
 
 
