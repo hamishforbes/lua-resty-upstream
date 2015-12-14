@@ -1,7 +1,7 @@
 local ngx_log = ngx.log
-local ngx_debug = ngx.DEBUG
-local ngx_err = ngx.ERR
-local ngx_info = ngx.INFO
+local ngx_DEBUG = ngx.DEBUG
+local ngx_ERR = ngx.ERR
+local ngx_INFO = ngx.INFO
 local str_format = string.format
 local tostring = tostring
 
@@ -115,7 +115,7 @@ function _M.set_method(self, poolid, method)
         return nil, 'Pool not found'
     end
     pools[poolid].method = method
-    ngx_log(ngx_debug, str_format('%s method set to %s', poolid, method))
+    ngx_log(ngx_DEBUG, str_format('%s method set to %s', poolid, method))
 
     local ok, err = self:save_pools(pools)
     if not ok then
@@ -194,7 +194,7 @@ function _M.create_pool(self, opts)
     -- Add some operational data per pool
     self.upstream.operational_data[poolid] = {}
 
-    ngx_log(ngx_debug, 'Created pool '..poolid)
+    ngx_log(ngx_DEBUG, 'Created pool '..poolid)
 
     local ok, err = self:sort_pools(pools)
     self:unlock_pools()
@@ -227,7 +227,7 @@ function _M.set_priority(self, poolid, priority)
         self:unlock_pools()
         return ok, err
     end
-    ngx_log(ngx_debug, str_format('%s priority set to %d', poolid, priority))
+    ngx_log(ngx_DEBUG, str_format('%s priority set to %d', poolid, priority))
 
     local ok, err = self:sort_pools(pools)
     self:unlock_pools()
@@ -263,7 +263,7 @@ function _M.set_weight(self, poolid, hostid, weight)
     end
     pool.hosts[host_idx].weight = weight
 
-    ngx_log(ngx_debug,
+    ngx_log(ngx_DEBUG,
         str_format('Host weight "%s" in "%s" set to %d', hostid, poolid, weight)
     )
 
@@ -348,7 +348,7 @@ function _M.add_host(self, poolid, host)
 
     pool.hosts[#pool.hosts+1] = new_host
 
-    ngx_log(ngx_debug, str_format('Host "%s" added to  "%s"', hostid, poolid))
+    ngx_log(ngx_DEBUG, str_format('Host "%s" added to  "%s"', hostid, poolid))
     local ok, err = self:save_pools(pools)
     self:unlock_pools()
     return ok,err
@@ -379,7 +379,7 @@ function _M.remove_host(self, poolid, hostid)
     end
     pool.hosts[host_idx] = nil
 
-    ngx_log(ngx_debug, str_format('Host "%s" removed from "%s"', hostid, poolid))
+    ngx_log(ngx_DEBUG, str_format('Host "%s" removed from "%s"', hostid, poolid))
     local ok, err = self:save_pools(pools)
     self:unlock_pools()
     return ok, err
@@ -412,7 +412,7 @@ function _M.down_host(self, poolid, hostid)
     host.up = false
     host.lastfail = 0
     host.failcount = 0
-    ngx_log(ngx_debug,
+    ngx_log(ngx_DEBUG,
         str_format('Host "%s" in Pool "%s" is manually down',
             host.id,
             poolid
@@ -451,7 +451,7 @@ function _M.up_host(self, poolid, hostid)
     host.up = true
     host.lastfail = 0
     host.failcount = 0
-    ngx_log(ngx_debug,
+    ngx_log(ngx_DEBUG,
         str_format('Host "%s" in Pool "%s" is manually up',
             host.id,
             poolid
