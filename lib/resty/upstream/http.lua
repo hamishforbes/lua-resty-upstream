@@ -2,6 +2,7 @@ local ngx_worker_pid = ngx.worker.pid
 local ngx_timer_at = ngx.timer.at
 local ngx_log = ngx.log
 local ngx_ERR = ngx.ERR
+local ngx_WARN = ngx.WARN
 local ngx_DEBUG = ngx.DEBUG
 local ngx_var = ngx.var
 local str_lower = string.lower
@@ -85,7 +86,7 @@ local function http_check_request(self, httpc, params)
         repeat
             local chunk, err = reader(65536)
             if err then
-              self:log(ngx_ERR, "Healthcheck read error: "..(err or ""))
+              self:log(ngx_WARN, "Healthcheck read error: "..(err or ""))
               break
             end
         until not chunk
@@ -137,7 +138,7 @@ local function healthcheck(self, host, pool, host_idx)
             failed_request(self, host.id, pool.id)
             if host.up then
                 -- Only log if it wasn't already down
-                self:log(ngx_ERR,
+                self:log(ngx_WARN,
                     str_format("Connection failed for host '%s' (%s:%i) in pool '%s': %s",
                      host.id, host.host, host.port, pool.id, err)
                 )
@@ -156,7 +157,7 @@ local function healthcheck(self, host, pool, host_idx)
                     failed_request(self, host.id, pool.id)
                     if host.up then
                         -- Only log if it wasn't already down
-                        self:log(ngx_ERR,
+                        self:log(ngx_WARN,
                             str_format("SSL Handshake failed for host '%s' (%s:%i) in pool '%s': %s",
                              host.id, host.host, host.port, pool.id, err)
                         )
@@ -238,7 +239,7 @@ function _M.validate_response(self, res, http_err, host, pool, healthcheck)
     if not res then
         -- Request failed in some fashion
         if host.up == true then
-            self:log(ngx_ERR,
+            self:log(ngx_WARN,
                 str_format("HTTP Request Error from host '%s' (%s:%i) in pool '%s': %s",
                     (host.id or "unknown"),
                     host.host or "unknown",
@@ -270,7 +271,7 @@ function _M.validate_response(self, res, http_err, host, pool, healthcheck)
             failed_request(self, host.id, pool.id)
 
             if host.up == true then
-                self:log(ngx_ERR,
+                self:log(ngx_WARN,
                     str_format('HTTP %s from Host "%s" (%s:%i) in pool "%s"',
                         status_code or "nil",
                         host.id     or "nil",
@@ -317,7 +318,7 @@ local function _request(self, upstream, httpc, params)
         local host_data = upstream:get_host_operational_data(pool.id, host.id)
         local ok, err = httpc:ssl_handshake(host_data.ssl_session, ssl_opts.sni_host or ngx.var.host, ssl_opts.ssl_verify)
         if not ok then
-            self:log(ngx_ERR,
+            self:log(ngx_WARN,
                 str_format("SSL Error connecting to '%s' (%s:%d): %s", host.id, host.host, host.port, err))
             failed_request(self, host.id, pool.id)
             return ok, err

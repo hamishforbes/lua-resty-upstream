@@ -4,6 +4,7 @@ local ngx_worker_pid = ngx.worker.pid
 local ngx_log = ngx.log
 local ngx_DEBUG = ngx.DEBUG
 local ngx_ERR = ngx.ERR
+local ngx_WARN = ngx.WARN
 local ngx_INFO = ngx.INFO
 local str_format = string.format
 local tbl_insert = table.insert
@@ -243,7 +244,7 @@ function _M.get_locked_pools(self)
         local pools, err = json_decode(pool_str)
         return pools, err
     else
-        self:log(ngx_ERR, "Failed to lock pools: ", err)
+        self:log(ngx_INFO, "Failed to lock pools: ", err)
     end
 
     return ok, err
@@ -436,7 +437,7 @@ function _M._process_failed_hosts(premature, self, ctx)
             host.failcount = host.failcount + 1
             if host.failcount >= max_fails and host.up == true then
                 host.up = false
-                self:log(ngx_ERR,
+                self:log(ngx_WARN,
                     str_format('Host "%s" in Pool "%s" is down', host.id, poolid)
                 )
                 pool.id = poolid
@@ -503,7 +504,7 @@ function _M.connect_failed(self, host, poolid, failed_hosts)
     -- Flag host as failed
     local hostid = host.id
     failed_hosts[hostid] = true
-    self:log(ngx_ERR,
+    self:log(ngx_WARN,
         str_format('Failed connecting to Host "%s" (%s:%d) from pool "%s"',
             hostid,
             host.host,
