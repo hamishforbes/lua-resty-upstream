@@ -618,10 +618,14 @@ end
 
 function _M.connect(self, sock)
     -- Get pool data
-    local priority_index = self:get_priority_index()
-    local pools = self:get_pools()
-    if not pools or not priority_index then
-        return nil, 'No valid pool data'
+    local priority_index, err = self:get_priority_index()
+    if not priority_index then
+        return nil, 'No valid pool order: '.. (err or "")
+    end
+
+    local pools, err = self:get_pools()
+    if not pools then
+        return nil, 'No valid pool data: '.. (err or "")
     end
 
     -- A socket (or resty client module) can be passed in, otherwise create a socket
