@@ -515,6 +515,111 @@ function _M.connect_failed(self, host, poolid, failed_hosts)
 end
 
 
+local function get_hash_host(vars)
+    local h = vars.hash
+    local hosts = vars.available_hosts
+    local weight_sum = vars.weight_sum
+    local hostcount = #hosts
+
+    if hostcount == 0 then return end
+
+    local cur_idx = 1
+
+    -- figure where we should go
+    local cur_weight = hosts[cur_idx].weight
+
+    while (h >= cur_weight) do
+        h = h - cur_weight
+
+        if (h < 0) then
+            h = maxweight + h
+        end
+
+        cur_idx = cur_idx + 1
+
+        if (cur_idx > hostcount) then
+            cur_idx = 1
+        end
+
+        cur_weight = hosts[cur_idx].weight
+    end
+
+    -- now cur_idx points us to where we should go
+    return hosts[cur_idx]
+end
+
+function get_hash_vars(hosts, failed_hosts, key)
+    local available_hosts = {} -- new tab needed here
+    local n = 0
+    local weight_sum = 0
+
+    for i=1, #hosts do
+        local host = hosts[i]
+
+        if (host.up and not failed_hosts[host.id]) then
+            n = n + 1
+            available_hosts[n] = host
+            weight_sum = weight_sum + host.weight
+        end
+    end
+
+    local hash = ngx.crc32_short(key) % weight_sum
+
+    return {
+        available_hosts = available_hosts,
+        weight_sum      = weight_sum,
+        hash            = hash,
+    }
+end
+
+_M.available_methods.hash = function(self, pool, sock, key)
+    local hosts    = pool.hosts
+    local poolid   = pool.id
+	local hash_key = key or ngx.var.remote_addr
+
+    local failed_hosts = self:get_failed_hosts(poolid)
+
+    -- Attempt a connection
+    if #hosts == 1 then
+        -- Don't bother trying to balance between 1 host
+        local host = hosts[1]
+        if host.up == false or failed_hosts[host.id] then
+            return nil, sock, {}, nil
+        end
+        local connected, err = sock:connect(host.host, host.port)
+        if not connected then
+            self:connect_failed(host, poolid, failed_hosts)
+        end
+        return connected, sock, host, err
+    end
+
+    local hash_vars = get_hash_vars(hosts, failed_hosts, hash_key)
+
+    local connected, err
+    repeat
+        local host = get_hash_host(hash_vars)
+        if not host then
+            -- Ran out of hosts, break out of the loop (go to next pool)
+            break
+        end
+
+        -- Try connecting to the selected host
+        connected, err = sock:connect(host.host, host.port)
+
+        if connected then
+            return connected, sock, host, err
+        else
+            -- Mark the host bad and retry
+            self:connect_failed(host, poolid, failed_hosts)
+
+            -- rehash
+            hash_vars = get_hash_vars(hosts, failed_hosts, hash_key)
+        end
+    until connected
+    -- All hosts have failed
+    return nil, sock, {}, err
+end
+
 local function select_weighted_rr_host(hosts, failed_hosts, round_robin_vars)
     local idx = round_robin_vars.idx
     local cw = round_robin_vars.cw
@@ -569,7 +674,6 @@ local function get_round_robin_vars(self, pool)
     return round_robin_vars
 end
 
-
 _M.available_methods.round_robin = function(self, pool, sock)
     local hosts = pool.hosts
     local poolid = pool.id
@@ -616,7 +720,7 @@ _M.available_methods.round_robin = function(self, pool, sock)
 end
 
 
-function _M.connect(self, sock)
+function _M.connect(self, sock, key)
     -- Get pool data
     local priority_index, err = self:get_priority_index()
     if not priority_index then
@@ -652,7 +756,7 @@ function _M.connect(self, sock)
                 set_timeout(sock, pool.timeout)
 
                 -- Load balance between available hosts using specified method
-                connected, sock, host, err = available_methods[pool.method](self, pool, sock)
+                connected, sock, host, err = available_methods[pool.method](self, pool, sock, key)
 
                 if connected then
                     -- Return connected socket!

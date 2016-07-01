@@ -118,18 +118,22 @@ Takes an optional id parameter, this *must* be unique if multiple instances of u
 Initialises the background thread, should be called in `init_worker_by_lua`
 
 ### connect
-`syntax: ok, err = upstream:connect(client?)`
+`syntax: ok, err = upstream:connect(client?, key?)`
 
 Attempts to connect to a host in the defined pools in priority order using the selected load balancing method.
 Returns a connected socket and a table containing the connected `host`, `poolid` and `pool` or nil and an error message.
 
 When passed a [socket](https://github.com/openresty/lua-nginx-module#ngxsockettcp) or resty module it will return the same object after successful connection or nil.
 
+Additionally, hash methods may take an optional `key` to define how to hash the connection to determine the host. By default `ngx.var.remote_addr` is used. This value is ignored when the pool's method is round robin.
+
 ```lua
 resty_redis = require('resty.redis')
 local redis = resty_redis.new()
 
-local redis, err = upstream:connect(redis)
+local key = ngx.req.get_headers()["X-Forwarded-For"]
+
+local redis, err = upstream:connect(redis, key)
 
 if not redis then
     ngx.log(ngx.ERR, err)
@@ -250,7 +254,7 @@ Returns a new api object using the provided upstream object.
 `syntax: ok, err = api:set_method(poolid, method)`
 
 Sets the load balancing method for the specified pool.
-Currently only randomised round robin is supported.
+Currently randomised round robin and hashing methods are supported.
 
 ### create_pool
 `syntax: ok, err = api:create_pool(pool)`
@@ -259,7 +263,7 @@ Creates a new pool from a table of options, `pool` must contain at least 1 key `
 
 Other valid options are 
 
-* `method` Balancing method, currently only `round_robin` is supported
+* `method` Balancing method
 * `timeout` Connection timeout in ms
 * `priority` Higher priority pools are used later
 * `read_timeout`
