@@ -548,7 +548,8 @@ local function get_hash_host(vars)
     return hosts[cur_idx]
 end
 
-function get_hash_vars(hosts, failed_hosts, key)
+
+local function get_hash_vars(hosts, failed_hosts, key)
     local available_hosts = {} -- new tab needed here
     local n = 0
     local weight_sum = 0
@@ -571,6 +572,7 @@ function get_hash_vars(hosts, failed_hosts, key)
         hash            = hash,
     }
 end
+
 
 _M.available_methods.hash = function(self, pool, sock, key)
     local hosts    = pool.hosts
@@ -619,6 +621,7 @@ _M.available_methods.hash = function(self, pool, sock, key)
     -- All hosts have failed
     return nil, sock, {}, err
 end
+
 
 local function select_weighted_rr_host(hosts, failed_hosts, round_robin_vars)
     local idx = round_robin_vars.idx
@@ -673,6 +676,7 @@ local function get_round_robin_vars(self, pool)
     round_robin_vars.gcd, round_robin_vars.max_weight = calc_gcd_weight(pool.hosts)
     return round_robin_vars
 end
+
 
 _M.available_methods.round_robin = function(self, pool, sock)
     local hosts = pool.hosts
