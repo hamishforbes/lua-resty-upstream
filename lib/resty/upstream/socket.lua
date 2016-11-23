@@ -404,7 +404,7 @@ end
 
 function _M.get_host_idx(id, hosts)
     for i, host in ipairs(hosts) do
-        if host.id == id then
+        if tonumber(host.id) == tonumber(id) then
             return i
         end
     end
