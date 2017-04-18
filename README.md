@@ -1,8 +1,8 @@
-#lua-resty-upstream
+# lua-resty-upstream
 
 Upstream connection load balancing and failover module
 
-#Table of Contents
+# Table of Contents
 
 * [Status](#status)
 * [Overview](#overview)
@@ -35,13 +35,13 @@ Upstream connection load balancing and failover module
 * [HTTP Healthchecks](#http-healthchecks)
 
 
-#Status
+# Status
 
 Experimental, API may change without warning.
 
 Requires ngx_lua > 0.9.5
 
-#Overview
+# Overview
 
 Create a lua [shared dictionary](https://github.com/openresty/lua-nginx-module#lua_shared_dict).
 Define your upstream pools and hosts in init_by_lua, this will be saved into the shared dictionary.
