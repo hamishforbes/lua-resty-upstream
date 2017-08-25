@@ -369,10 +369,17 @@ function _M.request(self, params)
 end
 
 
-function _M.set_keepalive(self)
-    local pool = self.upstream:ctx().conn_info.pool
-    local keepalive_timeout = pool.keepalive_timeout or defaults.keepalive_timeout
-    local keepalive_pool    = pool.keepalive_pool    or defaults.keepalive_pool
+function _M.set_keepalive(self, ...)
+    local keepalive_timeout, keepalive_pool
+    local conn_info = self.upstream:ctx().conn_info
+    if not conn_info or not conn_info.pool then
+        keepalive_timeout = select(1, ...) or defaults.keepalive_timeout
+        keepalive_pool = select(2, ...) or defaults.keepalive_pool
+    else
+        local pool = conn_info.pool
+        keepalive_timeout = pool.keepalive_timeout
+        keepalive_pool    = pool.keepalive_pool
+    end
 
     return self:httpc():set_keepalive(keepalive_timeout, keepalive_pool)
 end
