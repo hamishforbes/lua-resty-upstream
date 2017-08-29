@@ -193,22 +193,33 @@ tertiary
             local original = upstream:get_pools()
             local alt = upstream2:get_pools()
 
+            local sorted = {}
             for k,v in pairs(original) do
-                ngx.say(k)
+                table.insert(sorted, k)
             end
+            table.sort(sorted)
+            for _,v in ipairs(sorted) do
+                ngx.say(v)
+            end
+
+            local sorted = {}
             for k,v in pairs(alt) do
-                ngx.say(k)
+                table.insert(sorted, k)
+            end
+            table.sort(sorted)
+            for _, v in ipairs(sorted) do
+                ngx.say(v)
             end
         ';
     }
 --- request
 GET /a
 --- response_body
-tertiary
 primary
 secondary
-primary
+tertiary
 alternate
+primary
 --- no_error_log
 [error]
 [warn]

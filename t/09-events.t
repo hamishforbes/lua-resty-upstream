@@ -176,15 +176,10 @@ OK
             -- Bind event
             local function host_down_handler(event)
                 ngx.say("host_down fired!")
-                local cjson = require("cjson")
-                local log = {
-                    host_id = event.host.id,
-                    host = event.host.host,
-                    host_max_fails = event.host.max_fails,
-                    host_up = event.host.up,
-                    pool = event.pool.id
-                }
-                ngx.say(cjson.encode(log))
+                ngx.say("host_id = ", event.host.id)
+                ngx.say("host = ", event.host.host)
+                ngx.say("host_up = ", event.host.up)
+                ngx.say("pool = ", event.pool.id)
             end
             local ok, err = upstream:bind("host_down", host_down_handler)
             if not ok then
@@ -204,7 +199,11 @@ OK
 GET /
 --- response_body
 host_down fired!
-{"host":"127.0.0.1","host_id":"a","pool":"primary","host_up":false}
+host_id = a
+host = 127.0.0.1
+host_up = false
+pool = primary
+
 
 === TEST 5: host_up event fires
 --- http_config eval
@@ -220,15 +219,10 @@ host_down fired!
             -- Bind event
             local function host_up_handler(event)
                 ngx.say("host_up fired!")
-                local cjson = require("cjson")
-                local log = {
-                    host_id = event.host.id,
-                    host = event.host.host,
-                    host_max_fails = event.host.max_fails,
-                    host_up = event.host.up,
-                    pool = event.pool.id
-                }
-                ngx.say(cjson.encode(log))
+                ngx.say("host_id = ", event.host.id)
+                ngx.say("host = ", event.host.host)
+                ngx.say("host_up = ", event.host.up)
+                ngx.say("pool = ", event.pool.id)
             end
             local ok, err = upstream:bind("host_up", host_up_handler)
             if not ok then
@@ -245,7 +239,10 @@ GET /
 --- no_error_log: error
 --- response_body
 host_up fired!
-{"host":"127.0.0.1","host_id":"b","pool":"primary","host_up":true}
+host_id = b
+host = 127.0.0.1
+host_up = true
+pool = primary
 
 === TEST 6: host_up event does not fire when reseting failcount
 --- http_config eval
