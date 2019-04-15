@@ -19,6 +19,7 @@ local cjson = require('cjson')
 local cjson_encode = cjson.encode
 local cjson_decode = cjson.decode
 local resty_lock = require('resty.lock')
+local resty_base = require('resty.core.base')
 
 
 local safe_json = function(func, data)
@@ -186,7 +187,14 @@ end
 function _M.ctx(self)
     -- Straight up stolen from lua-resty-core
     -- No request available so must be the init phase, return an empty table
-    if not getfenv(0).__ngx_req then
+    -- start from v0.1.16, lua-resty-core use 'get_request()' to replace 'getfenv(0).__ngx_req'
+    local req
+    if resty_base.version >= "0.1.16" then
+        req = resty_base.get_request()
+    else
+        req = getfenv(0).__ngx_req
+    end
+    if not req then
         return {}
     end
     local ngx_ctx = ngx.ctx
