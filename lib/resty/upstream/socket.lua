@@ -19,8 +19,12 @@ local cjson = require('cjson')
 local cjson_encode = cjson.encode
 local cjson_decode = cjson.decode
 local resty_lock = require('resty.lock')
-local resty_base = require('resty.core.base')
 
+-- from resty-core v0.1.16, use 'get_request()' to replace 'getfenv(0).__ngx_req'
+local get_request = require('resty.core.base').get_request
+if not get_request then
+    get_request = function() return getfenv(0).__ngx_req end
+end
 
 local safe_json = function(func, data)
     local ok, ret = pcall(func, data)
@@ -185,18 +189,11 @@ end
 
 -- A safe place in ngx.ctx for the current module instance (self).
 function _M.ctx(self)
-    -- Straight up stolen from lua-resty-core
     -- No request available so must be the init phase, return an empty table
-    -- start from v0.1.16, lua-resty-core use 'get_request()' to replace 'getfenv(0).__ngx_req'
-    local req
-    if resty_base.version >= "0.1.16" then
-        req = resty_base.get_request()
-    else
-        req = getfenv(0).__ngx_req
-    end
-    if not req then
+    if not get_request() then
         return {}
     end
+
     local ngx_ctx = ngx.ctx
     local id = self.id
     local ctx = ngx_ctx[id]
